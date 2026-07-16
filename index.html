@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>학습개발2팀 키오스크</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>body { margin:0; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    Babel.registerPreset("react-classic", {
+      presets: [[Babel.availablePresets["react"], { runtime: "classic" }]]
+    });
+  </script>
+  <script type="text/babel" data-presets="react-classic">
+const { useState, useEffect, useCallback } = React;
+
+/* ── 팀원 기본 데이터 ─────────────────────────────────── */
+const SEED_MEMBERS = [
+  ["한주연", 10, 25], ["김민선", 1, 19], ["박미진", 6, 12], ["오정아", 7, 30],
+  ["가민지", 4, 15], ["서지희", 2, 28], ["최여정", 9, 29], ["장지은", 11, 17],
+  ["엄주원", 2, 29], ["최보윤", 1, 25], ["이나라", 6, 3], ["이수정", 1, 30],
+  ["이선주", 12, 22], ["정은경", 10, 24], ["박금미", 8, 30], ["유정선", 7, 2],
+].map(([name, m, d], i) => ({
+  id: "m" + i, name, bMonth: m, bDay: d,
+  onLeave: name === "장지은" || name === "서지희",
+}));
+
+/* ── 카페 메뉴 데이터 [카테고리, 이름, 가격, 온도] ───────
+   온도: both = 핫/아이스 선택, hot = 핫 전용, ice = 아이스 전용 */
+const M = (cat, name, price, temp) => ({ cat, name, price, temp });
+
+const CAFE_JJADRA = {
+  id: "c0", name: "짜드라",
+  options: [
+    { name: "샷추가", delta: 700 }, { name: "두유 변경", delta: 700 },
+    { name: "디카페인", delta: 1000 }, { name: "사이즈업", delta: 1000 },
+    { name: "텀블러 할인", delta: -200 }, { name: "연하게", delta: 0 },
+    { name: "얼음 적게", delta: 0 },
+  ],
+  menus: [
+    M("커피", "아메리카노", 2000, "both"),
+    M("커피", "카페라떼", 3000, "both"),
+    M("커피", "카푸치노", 3300, "hot"),
+    M("커피", "바닐라라떼", 3800, "both"),
+    M("커피", "카페모카", 4000, "both"),
+    M("시그니처", "짜드라카노", 4000, "ice"),
+    M("시그니처", "짜드라떼", 4700, "both"),
+    M("시그니처", "흑임짜드라떼", 5000, "ice"),
+    M("말차", "말차밀크", 3500, "both"),
+    M("말차", "말차크림", 4300, "both"),
+    M("말차", "말차레몬에이드", 4000, "ice"),
+    M("차", "페퍼민트", 3000, "both"),
+    M("차", "얼그레이", 3000, "both"),
+    M("차", "캐모마일", 3000, "both"),
+    M("차", "꿀 생강청", 3700, "both"),
+    M("차", "유자 민트", 3700, "both"),
+    M("음료", "밀크티", 3900, "both"),
+    M("음료", "초코밀크", 3500, "both"),
+    M("음료", "레몬에이드", 3700, "ice"),
+    M("음료", "복숭아 아이스티", 3000, "ice"),
+    M("음료", "오렌지디카노", 5000, "ice"),
+  ],
+};
+
+const CAFE_ITSCRISPY = {
+  id: "c1", name: "잇츠크리스피",
+  options: [
+    { name: "L 사이즈업", delta: 500 }, { name: "연하게", delta: 0 },
+    { name: "얼음 적게", delta: 0 },
+  ],
+  menus: [
+    M("커피", "에스프레소", 3500, "hot"),
+    M("커피", "에스프레소 마끼아또", 3500, "hot"),
+    M("커피", "아메리카노", 3500, "both"),
+    M("커피", "디카페인 아메리카노", 3800, "both"),
+    M("커피", "카페라떼", 4000, "both"),
+    M("커피", "카푸치노", 4000, "both"),
+    M("커피", "바닐라라떼", 4700, "both"),
+    M("커피", "캐러멜 마끼아또", 4900, "both"),
+    M("커피", "화이트 초콜릿 라떼", 5000, "both"),
+    M("커피", "콜드브루", 4500, "ice"),
+    M("티", "모로칸 민트", 4200, "both"),
+    M("티", "바닐라버번", 4200, "both"),
+    M("티", "프렌치 얼그레이", 4200, "both"),
+    M("티", "캐모마일", 4000, "both"),
+    M("티", "트로피칼 크림슨", 4000, "both"),
+    M("티", "마테 레몬그라스", 4000, "both"),
+    M("티", "탠저린 진저", 4000, "both"),
+    M("티", "허니 진저 시나몬 레몬티", 6000, "both"),
+    M("티", "유자차", 6000, "both"),
+    M("티", "자몽차", 6000, "both"),
+    M("티", "오미자차", 6000, "both"),
+    M("음료", "리얼 초콜릿", 6000, "both"),
+    M("음료", "밀크티라떼", 4700, "both"),
+    M("음료", "그린티라떼", 4700, "both"),
+    M("콜드 음료", "레몬에이드", 5500, "ice"),
+    M("콜드 음료", "오미자에이드", 6500, "ice"),
+    M("콜드 음료", "라임 모히또", 6000, "ice"),
+    M("콜드 음료", "청포도 모히또", 6000, "ice"),
+    M("콜드 음료", "생과일주스", 4800, "ice"),
+    M("콜드 음료", "딸기 스무디", 4800, "ice"),
+    M("콜드 음료", "미숫가루", 4500, "ice"),
+  ],
+};
+
+const CAFE_BANAPRESSO = {
+  id: "c2", name: "바나프레소",
+  options: [
+    { name: "연하게", delta: 0 }, { name: "얼음 적게", delta: 0 },
+    { name: "시럽추가", delta: 0 },
+  ],
+  menus: [
+    M("커피", "아메리카노", 2500, "both"),
+    M("커피", "화이트아메리카노", 3100, "both"),
+    M("커피", "헛개리카노", 3100, "both"),
+    M("커피", "허니아메리카노", 3100, "both"),
+    M("커피", "제로슈가 스위트아메리카노", 3100, "both"),
+    M("커피", "카페라떼", 3300, "both"),
+    M("커피", "크리미라떼", 3900, "both"),
+    M("커피", "바닐라라떼", 3900, "both"),
+    M("커피", "연유라떼", 4400, "both"),
+    M("커피", "카페모카", 4400, "both"),
+    M("커피", "밀크카라멜마키아또", 4400, "both"),
+    M("커피", "시나몬라떼", 4400, "both"),
+    M("커피", "피스타치오카페라떼", 4400, "both"),
+    M("커피", "스위트소금라떼", 4400, "both"),
+    M("커피", "클래식밀크커피", 2700, "both"),
+    M("커피", "콜드브루", 3600, "ice"),
+    M("커피", "콜드브루라떼", 4100, "ice"),
+    M("커피", "바닐라콜드브루", 4300, "ice"),
+    M("커피", "돌체콜드브루", 4800, "ice"),
+    M("커피", "말차콜드브루", 4800, "ice"),
+    M("라떼", "딸기크림라떼", 4500, "ice"),
+    M("라떼", "제주말차크림라떼", 4300, "both"),
+    M("라떼", "영양고구마라떼", 3800, "both"),
+    M("라떼", "제주말차라떼", 3800, "both"),
+    M("라떼", "피스타치오라떼", 3800, "both"),
+    M("라떼", "토피넛라떼", 3800, "both"),
+    M("라떼", "미숫가루라떼", 3800, "both"),
+    M("라떼", "리얼초코", 3800, "both"),
+    M("라떼", "딸기라떼", 4000, "ice"),
+    M("라떼", "얼그레이밀크티", 3800, "both"),
+    M("라떼", "흑당밀크티", 3800, "both"),
+    M("라떼", "얼그레이버블티", 4300, "ice"),
+    M("라떼", "흑당버블티", 4300, "ice"),
+    M("라떼", "헛개버블티", 4500, "ice"),
+    M("티·에이드", "에이드 (레몬/자몽/청포도/청귤)", 3800, "ice"),
+    M("티·에이드", "복숭아에이드", 4300, "ice"),
+    M("티·에이드", "복숭아아이스티", 3000, "ice"),
+    M("티·에이드", "아샷추", 3500, "ice"),
+    M("티·에이드", "허니유자티", 3500, "both"),
+    M("티·에이드", "제주청귤티", 3500, "both"),
+    M("티·에이드", "문경오미자티", 3800, "both"),
+    M("티·에이드", "레몬티", 3800, "both"),
+    M("티·에이드", "자몽티", 3800, "both"),
+    M("티·에이드", "헛개차", 2500, "both"),
+    M("티·에이드", "히비스커스", 2800, "both"),
+    M("티·에이드", "얼그레이", 2800, "both"),
+    M("티·에이드", "페퍼민트", 2800, "both"),
+    M("티·에이드", "캐모마일", 2800, "both"),
+    M("티·에이드", "자몽허니블랙티", 3800, "both"),
+    M("티·에이드", "유자민트티", 3800, "both"),
+    M("주스·요거트", "플레인 요거트드링크", 3800, "ice"),
+    M("주스·요거트", "딸기 요거트드링크", 4000, "ice"),
+    M("주스·요거트", "복숭아 요거트드링크", 4300, "ice"),
+    M("주스·요거트", "딸기주스", 4000, "ice"),
+    M("주스·요거트", "망고주스", 4000, "ice"),
+    M("주스·요거트", "홍시주스", 4000, "ice"),
+    M("바나치노·스무디", "제주말차바나치노", 4500, "ice"),
+    M("바나치노·스무디", "자바칩바나치노", 4500, "ice"),
+    M("바나치노·스무디", "쿠앤크바나치노", 4500, "ice"),
+    M("바나치노·스무디", "콜드브루바나치노", 4800, "ice"),
+    M("바나치노·스무디", "바닐라셰이크", 4500, "ice"),
+    M("바나치노·스무디", "초코셰이크", 4500, "ice"),
+    M("바나치노·스무디", "초콜릿칩셰이크", 4500, "ice"),
+    M("바나치노·스무디", "스무디 (망고/딸기/복숭아/청귤)", 4000, "ice"),
+    M("바나치노·스무디", "요거트스무디 (플레인/망고/레몬/딸기)", 4000, "ice"),
+  ],
+};
+
+
+const CAFE_BROWNBENCH = {
+  id: "c3", name: "브라운벤치",
+  options: [
+    { name: "샷추가", delta: 500 }, { name: "시럽추가", delta: 500 },
+    { name: "세트 음료 라떼/카푸치노 변경", delta: 1000 },
+    { name: "연하게", delta: 0 }, { name: "얼음 적게", delta: 0 },
+  ],
+  menus: [
+    M("모닝세트 (AM7~10)", "세트A 머핀세트 (블루베리/초코 + 아메리카노)", 4000, "both"),
+    M("모닝세트 (AM7~10)", "세트B 프레즐세트 (프레즐 + 아메리카노)", 4000, "both"),
+    M("모닝세트 (AM7~10)", "세트C 베이글세트 (플레인/블루베리/어니언 + 아메리카노)", 4000, "both"),
+    M("커피", "에스프레소", 2800, "hot"),
+    M("커피", "에스프레소 도피오", 3300, "hot"),
+    M("커피", "아메리카노", 2800, "both"),
+    M("커피", "아메리카노 (大)", 3300, "both"),
+    M("커피", "카푸치노", 3300, "both"),
+    M("커피", "카페라떼", 3300, "both"),
+    M("커피", "카페라떼 (大)", 3800, "both"),
+    M("커피", "바닐라라떼", 4300, "both"),
+    M("커피", "헤이즐넛라떼", 4300, "both"),
+    M("커피", "토피넛라떼", 4300, "both"),
+    M("커피", "카페모카", 4600, "both"),
+    M("커피", "얼그레이라떼", 4800, "both"),
+    M("커피", "카라멜마끼아또", 4800, "both"),
+    M("허브티", "잉글리쉬 블랙퍼스트", 3500, "both"),
+    M("허브티", "얼그레이", 3500, "both"),
+    M("허브티", "페퍼민트", 3500, "both"),
+    M("허브티", "캐모마일", 3500, "both"),
+    M("허브티", "텐지레몬 (레몬스카이)", 3500, "both"),
+    M("허브티", "오베리 (레드베리)", 4000, "both"),
+    M("허브티", "자몽향", 4000, "both"),
+    M("에이드", "레몬에이드", 4800, "ice"),
+    M("에이드", "자몽에이드", 4800, "ice"),
+    M("에이드", "깔라만시에이드", 4800, "ice"),
+    M("에이드", "패션후르츠에이드", 4800, "ice"),
+  ],
+};
+
+/* ── 7월 주문 (스프레드시트 기록) ─────────────────────── */
+const SEED_JULY_ORDERS = [
+  ["m0", "아이스 카페라떼", [], 3000],
+  ["m1", "아이스 아메리카노", [], 2000],
+  ["m2", "따뜻한 유자 민트", [], 3700],
+  ["m3", "아이스 말차크림", ["샷추가"], 5000],
+  ["m4", "짜드라카노", [], 4000],
+  ["m6", "따뜻한 짜드라떼", [], 4700],
+  ["m8", "짜드라카노", [], 4000],
+  ["m9", "아이스 말차크림", ["샷추가"], 5000],
+  ["m10", "아이스 카페라떼", [], 3000],
+  ["m11", "아이스 카페라떼", [], 3000],
+  ["m12", "아이스 카페라떼", [], 3000],
+  ["m13", "아이스 아메리카노", ["디카페인"], 3000],
+  ["m15", "아이스 캐모마일", [], 3000],
+].map(([memberId, label, options, price]) => ({ memberId, label, options, price }));
+
+const STORAGE_KEY = "birthday-coffee-data-v2";
+const seedData = () => ({
+  cafes: [CAFE_JJADRA, CAFE_ITSCRISPY, CAFE_BANAPRESSO, CAFE_BROWNBENCH],
+  members: SEED_MEMBERS,
+  sessions: { "2026-07": { rounds: [{ id: "r1", cafeId: "c0", orders: SEED_JULY_ORDERS }] } },
+  settings: { memberSort: "name", leaveSeeded: true },
+});
+
+/* ── 유틸 ─────────────────────────────────────────────── */
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const monthLabel = (key) => { const [y, m] = key.split("-"); return `${y}년 ${Number(m)}월`; };
+const shiftMonth = (key, delta) => {
+  const [y, m] = key.split("-").map(Number);
+  return monthKey(new Date(y, m - 1 + delta, 1));
+};
+const fmt = (n) => n.toLocaleString("ko-KR") + "원";
+const labelTemp = (label) =>
+  label.startsWith("아이스") || label.includes("에이드") || label.includes("스무디")
+    ? "ice" : label.startsWith("따뜻한") ? "hot" : "none";
+const uid = () => Math.random().toString(36).slice(2, 9);
+const sortMembers = (members, mode) => {
+  const arr = [...members];
+  if (mode === "birthday") {
+    arr.sort((a, b) => {
+      const ka = a.bMonth ? a.bMonth * 100 + (a.bDay || 0) : 9999;
+      const kb = b.bMonth ? b.bMonth * 100 + (b.bDay || 0) : 9999;
+      return ka - kb || a.name.localeCompare(b.name, "ko");
+    });
+  } else {
+    arr.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }
+  return arr;
+};
+
+/* ▼▼▼ 아래 따옴표 안에 Apps Script 웹 앱 URL(…/exec)을 붙여넣으세요 ▼▼▼ */
+const API_URL = "https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnT782-qufk-BRinVZeXCORnEC8MLv6nZKpfmE8QFBHbyOt_iUWaCGDYD0E2M_tS5113XgTpfiv_8XpMysq21RS9qfO9pG7D-GOZ5ErG0U93rojJa_DA1gY43QoUqz0EsyRx_DU4NkKJghc7_SnaJlL8gaTTm1oY_i-Iy_JVmseXDxr_sTqT_w1A9c7wrB37bPcvUvIJnSDfQQHnbpuCFIAq-qFGsV_7wtvTMwFOQYsvV1Drycw65h3UCS7z8k-rEE5R-GiLD7d0ziSycMs1VYDAdlWCJQ&lib=MxbFYNgb3nj_TQ4ChYJ831-0UCUXJkrkS";
+
+/* ▼ 관리자 비밀번호 — 원하는 번호로 바꾸세요 ▼ */
+const ADMIN_PIN = "1025";
+const ADMIN_TABS = ["cafes", "members"];
+
+async function apiLoadRemote() {
+  const res = await fetch(API_URL + "?action=load");
+  if (!res.ok) throw new Error("불러오기 실패");
+  return await res.text();
+}
+async function apiSaveRemote(json) {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: json,
+  });
+  if (!res.ok) throw new Error("저장 실패");
+}
+
+async function loadData() {
+  try {
+    const raw = await apiLoadRemote();
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (!d.settings) d.settings = { memberSort: "name" };
+      if (!d.settings.leaveSeeded) {
+        d.members.forEach((m) => {
+          if (m.name === "장지은" || m.name === "서지희") m.onLeave = true;
+        });
+        d.settings.leaveSeeded = true;
+      }
+      Object.keys(d.sessions || {}).forEach((k) => {
+        const s = d.sessions[k];
+        if (s && !s.rounds) {
+          d.sessions[k] = { rounds: [{ id: uid(), cafeId: s.cafeId || null, orders: s.orders || [] }] };
+        }
+      });
+      if (!d.settings.julyFix1) {
+        const sjh = d.members.find((m) => m.name === "서지희");
+        const july = d.sessions["2026-07"];
+        if (sjh && july && july.rounds) {
+          july.rounds.forEach((r) => {
+            r.orders = r.orders.filter((o) => o.memberId !== sjh.id);
+          });
+        }
+        d.settings.julyFix1 = true;
+      }
+      if (!d.settings.brownBench1) {
+        if (!d.cafes.some((c) => c.name === "브라운벤치")) d.cafes.push(CAFE_BROWNBENCH);
+        d.settings.brownBench1 = true;
+      }
+      return d;
+    }
+  } catch (e) { /* 첫 실행 */ }
+  return seedData();
+}
+async function saveData(data) {
+  try { await apiSaveRemote(JSON.stringify(data)); return true; }
+  catch (e) { console.error("저장 실패", e); return false; }
+}
+
+/* ── 메인 앱 ──────────────────────────────────────────── */
+function BirthdayCoffeeKiosk() {
+  const [data, setData] = useState(null);
+  const [tab, setTab] = useState("order");
+  const [month, setMonth] = useState(monthKey(new Date()));
+  const [roundIdx, setRoundIdx] = useState(0);
+  const [cardOpen, setCardOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [pinAsk, setPinAsk] = useState(null); // 잠긴 탭 이동 요청
+  const [saveState, setSaveState] = useState("idle");
+
+  useEffect(() => { loadData().then(setData); }, []);
+  useEffect(() => { setRoundIdx(0); setCardOpen(false); }, [month]);
+
+  const update = useCallback((fn) => {
+    setData((prev) => {
+      const next = fn(structuredClone(prev));
+      setSaveState("saving");
+      saveData(next).then((ok) => setSaveState(ok ? "idle" : "error"));
+      return next;
+    });
+  }, []);
+
+  if (!data) {
+    return (<div className="bck-root"><Style /><div className="loading">불러오는 중…</div></div>);
+  }
+
+  const rounds = data.sessions[month]?.rounds || [{ id: "tmp", cafeId: null, orders: [] }];
+  const safeIdx = Math.min(roundIdx, rounds.length - 1);
+  const round = rounds[safeIdx];
+
+  const updateRound = (fn) =>
+    update((d) => {
+      if (!d.sessions[month]) d.sessions[month] = { rounds: [{ id: uid(), cafeId: null, orders: [] }] };
+      const rs = d.sessions[month].rounds;
+      fn(rs[Math.min(safeIdx, rs.length - 1)], d);
+      return d;
+    });
+
+  const addRound = () => {
+    update((d) => {
+      if (!d.sessions[month]) d.sessions[month] = { rounds: [{ id: uid(), cafeId: null, orders: [] }] };
+      d.sessions[month].rounds.push({ id: uid(), cafeId: null, orders: [] });
+      return d;
+    });
+    setRoundIdx(rounds.length); // 새 차수로 이동
+  };
+
+  const removeRound = (idx) => {
+    update((d) => {
+      const rs = d.sessions[month]?.rounds;
+      if (rs && rs.length > 1) rs.splice(idx, 1);
+      return d;
+    });
+    setRoundIdx(Math.max(0, idx - 1));
+  };
+
+  const updateMonth = (fn) =>
+    update((d) => {
+      if (!d.sessions[month]) d.sessions[month] = { rounds: [{ id: uid(), cafeId: null, orders: [] }] };
+      fn(d.sessions[month]);
+      return d;
+    });
+
+  const cards = data.sessions[month]?.cards || [];
+  const curMonthNum = Number(month.split("-")[1]);
+  const birthdayPeople = data.members.filter((m) => m.bMonth === curMonthNum);
+
+  return (
+    <div className="bck-root">
+      <Style />
+      <header className="top">
+        <div className="title-row">
+          <h1>학습개발2팀 키오스크</h1>
+          <span className={"save-dot " + saveState}>
+            {saveState === "error" ? "저장 실패" : saveState === "saving" ? "저장 중" : "저장됨"}
+          </span>
+          {isAdmin && (
+            <button className="admin-chip" onClick={() => {
+              setIsAdmin(false);
+              if (ADMIN_TABS.includes(tab)) setTab("order");
+            }}>👤 관리자 모드 · 잠그기</button>
+          )}
+        </div>
+        <div className="month-nav">
+          <button className="mbtn" onClick={() => setMonth(shiftMonth(month, -1))}>‹</button>
+          <div className="month-label">
+            {monthLabel(month)}
+          </div>
+          <button className="mbtn" onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
+        </div>
+        {birthdayPeople.length > 0 && (
+          <div className="bday-banner">
+            <span>
+              🎂 <b>축하합니다!</b> {birthdayPeople.map((p) => `${p.name} (${p.bMonth}/${p.bDay})`).join(" · ")}
+            </span>
+            <button className="card-btn" onClick={() => setCardOpen(true)}>
+              💌 축하 카드 쓰기{cards.length > 0 ? ` · ${cards.length}장 보기` : ""}
+            </button>
+          </div>
+        )}
+        {rounds.length > 1 && (
+          <div className="round-row">
+            <span className="round-title">주문 차수</span>
+            {rounds.map((r, i) => {
+              const cname = data.cafes.find((c) => c.id === r.cafeId)?.name;
+              return (
+                <button key={r.id}
+                  className={"chip small round-chip" + (i === safeIdx ? " on" : "")}
+                  onClick={() => setRoundIdx(i)}>
+                  {i + 1}차{cname ? ` · ${cname}` : ""}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <nav className="tabs">
+          {[["order", "주문하기"], ["summary", "집계"], ["cafes", "카페 관리"], ["members", "팀원 관리"]].map(([k, label]) => (
+            <button key={k} className={"tab" + (tab === k ? " on" : "")}
+              onClick={() => { if (ADMIN_TABS.includes(k) && !isAdmin) setPinAsk(k); else setTab(k); }}>
+              {label}{ADMIN_TABS.includes(k) && !isAdmin ? " 🔒" : ""}
+              {k === "summary" && round.orders.length > 0 && <span className="badge">{round.orders.length}</span>}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      {cardOpen && (
+        <CardModal
+          data={data}
+          month={month}
+          cards={cards}
+          birthdayPeople={birthdayPeople}
+          updateMonth={updateMonth}
+          onClose={() => setCardOpen(false)}
+        />
+      )}
+
+      {pinAsk && (
+        <PinModal
+          onOk={() => { setIsAdmin(true); setTab(pinAsk); setPinAsk(null); }}
+          onClose={() => setPinAsk(null)}
+        />
+      )}
+
+      {tab === "order" && <OrderView data={data} month={month} round={round} roundIdx={safeIdx} updateRound={updateRound} />}
+      {tab === "summary" && <SummaryView data={data} month={month} rounds={rounds} roundIdx={safeIdx} updateRound={updateRound} isAdmin={isAdmin} />}
+      {tab === "cafes" && (
+        <CafeView data={data} month={month} rounds={rounds} roundIdx={safeIdx} setRoundIdx={setRoundIdx}
+          addRound={addRound} removeRound={removeRound} updateRound={updateRound} update={update} />
+      )}
+      {tab === "members" && <MemberView data={data} update={update} />}
+    </div>
+  );
+}
+
+/* ── 관리자 비밀번호 모달 ─────────────────────────────── */
+function PinModal({ onOk, onClose }) {
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState(false);
+  const submit = () => {
+    if (pin === ADMIN_PIN) onOk();
+    else { setErr(true); setPin(""); }
+  };
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal pin-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">🔒 관리자 확인</div>
+        <div className="hint" style={{ marginTop: 4 }}>관리자 비밀번호를 입력하세요.</div>
+        <input className="pin-input" type="password" inputMode="numeric" autoFocus
+          value={pin} onChange={(e) => { setPin(e.target.value); setErr(false); }}
+          onKeyDown={(e) => e.key === "Enter" && submit()} />
+        {err && <div className="pin-err">비밀번호가 다릅니다.</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button className="primary" onClick={submit}>확인</button>
+          <button className="chip" onClick={onClose}>취소</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 축하 카드 모달 ───────────────────────────────────── */
+function CardModal({ data, month, cards, birthdayPeople, updateMonth, onClose }) {
+  const [text, setText] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  const submit = () => {
+    if (!text.trim()) return;
+    const card = { id: uid(), text: text.trim(), ts: Date.now() };
+    updateMonth((s) => {
+      if (!s.cards) s.cards = [];
+      s.cards.push(card);
+    });
+    setText("");
+  };
+  const removeCard = (id) => {
+    updateMonth((s) => { s.cards = (s.cards || []).filter((c) => c.id !== id); });
+    setConfirmDel(null);
+  };
+
+  const tones = ["tone-a", "tone-b", "tone-c", "tone-d"];
+
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title">
+            💌 {monthLabel(month)} 축하 카드
+            <span className="hint" style={{ marginLeft: 8 }}>
+              🎂 {birthdayPeople.map((p) => p.name).join(" · ")}
+            </span>
+          </div>
+          <button className="mbtn" onClick={onClose}>✕</button>
+        </div>
+        <div className="hint">익명으로 남겨집니다.</div>
+
+        <textarea className="card-input" rows={3}
+          placeholder="생일자에게 한마디 남겨주세요 🎉"
+          value={text} onChange={(e) => setText(e.target.value)} />
+        <button className="primary" disabled={!text.trim()} onClick={submit}>
+          카드 남기기
+        </button>
+
+        <div className="card-wall">
+          {cards.length === 0 && <div className="hint pad">아직 카드가 없습니다. 첫 번째 카드를 남겨보세요.</div>}
+          {[...cards].reverse().map((c, i) => (
+            <div key={c.id} className={"bcard " + tones[i % tones.length]}>
+              <div className="bcard-text">{c.text}</div>
+              <div className="bcard-from">
+                {confirmDel === c.id ? (
+                  <>
+                    <button className="link-btn danger" onClick={() => removeCard(c.id)}>삭제</button>
+                    <button className="link-btn" onClick={() => setConfirmDel(null)}>취소</button>
+                  </>
+                ) : (
+                  <button className="bcard-x" onClick={() => setConfirmDel(c.id)}>×</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 주문(키오스크) ───────────────────────────────────── */
+function OrderView({ data, month, round, roundIdx, updateRound }) {
+  const [who, setWho] = useState(null);
+  const [picked, setPicked] = useState(null); // 메뉴 객체
+  const [temp, setTemp] = useState(null);
+  const [opts, setOpts] = useState([]);
+  const [customOpt, setCustomOpt] = useState("");
+
+  const cafe = data.cafes.find((c) => c.id === round.cafeId) || null;
+  const curMonthNum = Number(month.split("-")[1]);
+  const members = sortMembers(data.members, data.settings.memberSort);
+
+  const reset = () => { setPicked(null); setTemp(null); setOpts([]); setCustomOpt(""); };
+
+  const pick = (item) => {
+    if (picked && picked.name === item.name && picked.cat === item.cat) { reset(); return; }
+    setPicked(item);
+    setTemp(item.temp === "both" ? null : item.temp);
+    setOpts([]); setCustomOpt("");
+  };
+
+  const optDelta = opts.reduce((sum, name) => {
+    const o = cafe?.options.find((x) => x.name === name);
+    return sum + (o ? o.delta : 0);
+  }, 0);
+  const price = picked ? picked.price + optDelta : 0;
+  const label = picked
+    ? (picked.temp === "both" && temp ? (temp === "hot" ? "따뜻한 " : "아이스 ") + picked.name : picked.name)
+    : "";
+  const canSubmit = picked && (picked.temp !== "both" || temp);
+  const myOrder = who ? round.orders.find((o) => o.memberId === who) : null;
+  const absent = round.absent || [];
+  const iAmAbsent = who ? absent.includes(who) : false;
+
+  const toggleAbsent = () =>
+    updateRound((r) => {
+      if (!r.absent) r.absent = [];
+      if (r.absent.includes(who)) {
+        r.absent = r.absent.filter((id) => id !== who);
+      } else {
+        r.absent.push(who);
+        r.orders = r.orders.filter((o) => o.memberId !== who); // 불참 시 기존 주문 제거
+      }
+    });
+
+  const submit = () => {
+    if (!who || !canSubmit) return;
+    const allOpts = [...opts];
+    if (customOpt.trim()) allOpts.push(customOpt.trim());
+    const order = { memberId: who, label, options: allOpts, price };
+    updateRound((r) => {
+      r.orders = r.orders.filter((o) => o.memberId !== who);
+      r.orders.push(order);
+    });
+    reset();
+  };
+
+  const cancelOrder = () =>
+    updateRound((r) => { r.orders = r.orders.filter((o) => o.memberId !== who); });
+
+  const cats = cafe ? [...new Set(cafe.menus.map((m) => m.cat))] : [];
+
+  return (
+    <main className="pane">
+      <section className="step slim">
+        <div className="step-label" style={{ marginBottom: 0 }}>
+          {roundIdx + 1}차 카페
+          {cafe ? (
+            <span className="cur-cafe">☕ {cafe.name}</span>
+          ) : (
+            <span className="hint">아직 지정되지 않았습니다. 카페 관리 탭에서 카페를 지정하세요.</span>
+          )}
+        </div>
+      </section>
+
+      <section className="step">
+        <div className="step-label">이름을 선택하세요</div>
+        <div className="chip-row">
+          {members.filter((m) => !m.onLeave).map((m) => {
+            const done = round.orders.some((o) => o.memberId === m.id);
+            const isAbsent = absent.includes(m.id);
+            const bday = m.bMonth === curMonthNum;
+            return (
+              <button key={m.id}
+                className={"chip name-chip" + (who === m.id ? " on" : "") + (done ? " done" : "") + (bday ? " bday" : "") + (isAbsent ? " absent" : "")}
+                onClick={() => { setWho(m.id); reset(); }}>
+                {bday && "🎂 "}{m.name}{done && " ✓"}{isAbsent && " · 불참"}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {who && iAmAbsent && (
+        <section className="step">
+          <div className="step-label" style={{ marginBottom: 0 }}>
+            {data.members.find((m) => m.id === who)?.name} 님은 이번 차수 불참으로 표시되어 있습니다.
+            <button className="chip small" onClick={toggleAbsent}>불참 취소하고 주문하기</button>
+          </div>
+        </section>
+      )}
+
+      {who && !iAmAbsent && cafe && (
+        <section className="step">
+          <div className="step-label">
+            {data.members.find((m) => m.id === who)?.name} 님, 메뉴를 선택하세요
+            {myOrder ? (
+              <span className="my-order">
+                현재 주문: <b>{myOrder.label}{myOrder.options.length > 0 ? ` (${myOrder.options.join(", ")})` : ""} · {fmt(myOrder.price)}</b>
+                <button className="link-btn" onClick={cancelOrder}>주문 취소</button>
+              </span>
+            ) : (
+              <button className="chip small" onClick={() => { toggleAbsent(); reset(); }}>
+                ✈ 이번 차수 불참 (연차·자리비움)
+              </button>
+            )}
+          </div>
+          {cats.map((cat) => (
+            <div key={cat} className="menu-group">
+              <div className="cat-label">{cat}</div>
+              <div className="menu-grid">
+                {cafe.menus.filter((m) => m.cat === cat).map((item) => {
+                  const isOn = picked && picked.name === item.name && picked.cat === item.cat;
+                  return (
+                    <button key={item.name}
+                      className={`tile ${item.temp}` + (isOn ? " on" : "")}
+                      onClick={() => pick(item)}>
+                      <span className="tile-temp">
+                        {item.temp === "ice" ? "ICED" : item.temp === "hot" ? "HOT" : "HOT · ICED"}
+                      </span>
+                      <span className="tile-name">{item.name}</span>
+                      <span className="tile-price">{fmt(item.price)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+      {who && !iAmAbsent && !cafe && <div className="hint pad">카페 관리 탭에서 이 차수의 카페를 지정하면 메뉴가 표시됩니다.</div>}
+
+      {who && !iAmAbsent && picked && (
+        <section className="step confirm">
+          {picked.temp === "both" && (
+            <>
+              <div className="step-label">온도를 선택하세요 (필수)</div>
+              <div className="chip-row" style={{ marginBottom: 14 }}>
+                <button className={"chip temp-hot" + (temp === "hot" ? " on" : "")} onClick={() => setTemp("hot")}>따뜻하게 (HOT)</button>
+                <button className={"chip temp-ice" + (temp === "ice" ? " on" : "")} onClick={() => setTemp("ice")}>차갑게 (ICED)</button>
+              </div>
+            </>
+          )}
+          <div className="step-label">옵션 (선택)</div>
+          <div className="chip-row">
+            {cafe.options.map((o) => (
+              <button key={o.name}
+                className={"chip opt-chip" + (opts.includes(o.name) ? " on" : "")}
+                onClick={() => setOpts(opts.includes(o.name) ? opts.filter((x) => x !== o.name) : [...opts, o.name])}>
+                {o.name}{o.delta !== 0 && ` ${o.delta > 0 ? "+" : ""}${o.delta.toLocaleString()}`}
+              </button>
+            ))}
+            <input className="opt-input" placeholder="직접 입력"
+              value={customOpt} onChange={(e) => setCustomOpt(e.target.value)} />
+          </div>
+          <button className="primary big" disabled={!canSubmit} onClick={submit}>
+            {canSubmit
+              ? `${label}${(opts.length > 0 || customOpt.trim()) ? ` (${[...opts, customOpt.trim()].filter(Boolean).join(", ")})` : ""} · ${fmt(price)} — 주문하기`
+              : "온도를 선택하세요"}
+          </button>
+        </section>
+      )}
+    </main>
+  );
+}
+
+/* ── 집계 ─────────────────────────────────────────────── */
+function SummaryView({ data, month, rounds, roundIdx, updateRound, isAdmin }) {
+  const [copied, setCopied] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(null);
+  const round = rounds[roundIdx];
+  const cafe = data.cafes.find((c) => c.id === round.cafeId);
+  const nameOf = (id) => data.members.find((m) => m.id === id)?.name || "?";
+  const removeOrder = (memberId) => {
+    updateRound((r) => { r.orders = r.orders.filter((o) => o.memberId !== memberId); });
+    setConfirmDel(null);
+  };
+
+  const groups = {};
+  round.orders.forEach((o) => {
+    const key = o.label + (o.options.length > 0 ? ` (${o.options.join(", ")})` : "");
+    if (!groups[key]) groups[key] = { count: 0, unit: o.price, sum: 0, who: [] };
+    groups[key].count += 1;
+    groups[key].sum += o.price;
+    groups[key].who.push({ id: o.memberId, name: nameOf(o.memberId) });
+  });
+  const sorted = Object.entries(groups).sort((a, b) => b[1].count - a[1].count);
+  const total = round.orders.length;
+  const totalAmt = round.orders.reduce((s, o) => s + o.price, 0);
+  const monthTotal = rounds.reduce((s, r) => s + r.orders.length, 0);
+  const monthAmt = rounds.reduce((s, r) => s + r.orders.reduce((x, o) => x + o.price, 0), 0);
+  const absent = round.absent || [];
+  const absentMembers = data.members.filter((m) => absent.includes(m.id));
+  const notOrdered = data.members.filter(
+    (m) => !m.onLeave && !absent.includes(m.id) && !round.orders.some((o) => o.memberId === m.id)
+  );
+
+  const copyText = [
+    `[${monthLabel(month)} 생일 커피 · ${roundIdx + 1}차]${cafe ? " — " + cafe.name : ""}`,
+    ...sorted.map(([menu, g]) => `${menu} × ${g.count} = ${fmt(g.sum)}`),
+    `합계 ${total}잔 · ${fmt(totalAmt)}`,
+  ].join("\n");
+
+  const copy = () => {
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500); };
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = copyText; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) {}
+      document.body.removeChild(ta);
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(copyText).then(done).catch(fallback);
+    } else fallback();
+  };
+
+  return (
+    <main className="pane">
+      <section className="step">
+        <div className="step-label">{monthLabel(month)} · {roundIdx + 1}차 집계{cafe ? ` — ${cafe.name}` : ""}</div>
+        {sorted.length === 0 ? (
+          <div className="hint pad">아직 주문이 없습니다.</div>
+        ) : (
+          <>
+            <table className="tally">
+              <thead>
+                <tr className="thead-row"><td>메뉴</td><td className="t-count">수량</td><td className="t-amt">금액</td><td>주문자</td></tr>
+              </thead>
+              <tbody>
+                {sorted.map(([menu, g]) => (
+                  <tr key={menu}>
+                    <td className={"t-menu " + labelTemp(menu)}>{menu}</td>
+                    <td className="t-count">{g.count}</td>
+                    <td className="t-amt">{fmt(g.sum)}</td>
+                    <td className="t-who">
+                      {g.who.map((w, wi) => (
+                        <span key={w.id + wi} className="who-item">
+                          {w.name}
+                          {isAdmin && (confirmDel === w.id ? (
+                            <>
+                              <button className="link-btn danger" onClick={() => removeOrder(w.id)}>삭제</button>
+                              <button className="link-btn" onClick={() => setConfirmDel(null)}>취소</button>
+                            </>
+                          ) : (
+                            <button className="who-x" title="이 주문 삭제" onClick={() => setConfirmDel(w.id)}>×</button>
+                          ))}
+                        </span>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="total-row">
+                  <td>합계</td><td className="t-count">{total}</td>
+                  <td className="t-amt">{fmt(totalAmt)}</td><td />
+                </tr>
+              </tbody>
+            </table>
+            <button className="primary" onClick={copy}>
+              {copied ? "복사됨 ✓" : "주문 내용 복사 (카페 전달용)"}
+            </button>
+          </>
+        )}
+      </section>
+      {notOrdered.length > 0 && (
+        <section className="step">
+          <div className="step-label">{roundIdx + 1}차 아직 주문 안 함 ({notOrdered.length}명)</div>
+          <div className="hint">{sortMembers(notOrdered, data.settings.memberSort).map((m) => m.name).join(", ")}</div>
+        </section>
+      )}
+      {absentMembers.length > 0 && (
+        <section className="step slim">
+          <div className="step-label" style={{ marginBottom: 0 }}>
+            ✈ {roundIdx + 1}차 불참 ({absentMembers.length}명)
+            <span className="hint">{sortMembers(absentMembers, data.settings.memberSort).map((m) => m.name).join(", ")}</span>
+          </div>
+        </section>
+      )}
+      {rounds.length > 1 && (
+        <section className="step slim">
+          <div className="step-label" style={{ marginBottom: 0 }}>
+            {monthLabel(month)} 전체
+            <span className="cur-cafe">{rounds.length}차례 · {monthTotal}잔 · {fmt(monthAmt)}</span>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
+/* ── 카페 관리 ────────────────────────────────────────── */
+function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, removeRound, updateRound, update }) {
+  const [newCafe, setNewCafe] = useState("");
+  const [forms, setForms] = useState({}); // cafeId → {cat,name,price,temp,editIndex}
+  const [optForms, setOptForms] = useState({}); // cafeId → {name,delta}
+  const [confirmCafe, setConfirmCafe] = useState(null);
+  const [confirmRound, setConfirmRound] = useState(null);
+  const [openCafe, setOpenCafe] = useState(null);
+
+  const round = rounds[roundIdx];
+  const monthNum = Number(month.split("-")[1]);
+  const setRoundCafe = (cafeId) => updateRound((r) => { r.cafeId = cafeId; });
+
+  const getForm = (id) => forms[id] || { cat: "", name: "", price: "", temp: "both", editIndex: null };
+  const setForm = (id, f) => setForms({ ...forms, [id]: f });
+  const getOptForm = (id) => optForms[id] || { name: "", delta: "" };
+  const setOptForm = (id, f) => setOptForms({ ...optForms, [id]: f });
+
+  const addCafe = () => {
+    const name = newCafe.trim();
+    if (!name) return;
+    update((d) => { d.cafes.push({ id: uid(), name, menus: [], options: [] }); return d; });
+    setNewCafe("");
+  };
+  const removeCafe = (id) => update((d) => { d.cafes = d.cafes.filter((c) => c.id !== id); return d; });
+
+  const saveMenu = (cafeId) => {
+    const f = getForm(cafeId);
+    const name = f.name.trim();
+    const price = Number(String(f.price).replace(/[^0-9]/g, ""));
+    if (!name || !price) return;
+    const item = { cat: f.cat.trim() || "기타", name, price, temp: f.temp };
+    update((d) => {
+      const c = d.cafes.find((x) => x.id === cafeId);
+      if (f.editIndex !== null && c.menus[f.editIndex]) c.menus[f.editIndex] = item;
+      else c.menus.push(item);
+      return d;
+    });
+    setForm(cafeId, { cat: f.cat, name: "", price: "", temp: "both", editIndex: null });
+  };
+  const editMenu = (cafeId, index) => {
+    const c = data.cafes.find((x) => x.id === cafeId);
+    const m = c.menus[index];
+    setForm(cafeId, { cat: m.cat, name: m.name, price: String(m.price), temp: m.temp, editIndex: index });
+  };
+  const removeMenu = (cafeId, index) =>
+    update((d) => {
+      const c = d.cafes.find((x) => x.id === cafeId);
+      c.menus.splice(index, 1);
+      return d;
+    });
+
+  const addOption = (cafeId) => {
+    const f = getOptForm(cafeId);
+    const name = f.name.trim();
+    if (!name) return;
+    const delta = Number(String(f.delta).replace(/[^0-9-]/g, "")) || 0;
+    update((d) => {
+      const c = d.cafes.find((x) => x.id === cafeId);
+      c.options.push({ name, delta });
+      return d;
+    });
+    setOptForm(cafeId, { name: "", delta: "" });
+  };
+  const removeOption = (cafeId, name) =>
+    update((d) => {
+      const c = d.cafes.find((x) => x.id === cafeId);
+      c.options = c.options.filter((o) => o.name !== name);
+      return d;
+    });
+
+  return (
+    <main className="pane">
+      <section className="step">
+        <div className="step-label">{monthNum}월 주문 차수 관리</div>
+        <div className="chip-row">
+          {rounds.map((r, i) => {
+            const cname = data.cafes.find((c) => c.id === r.cafeId)?.name;
+            return (
+              <button key={r.id}
+                className={"chip round-chip" + (i === roundIdx ? " on" : "")}
+                onClick={() => { setRoundIdx(i); setConfirmRound(null); }}>
+                {i + 1}차{cname ? ` · ${cname}` : ""} ({r.orders.length}잔)
+              </button>
+            );
+          })}
+          <button className="chip" onClick={() => { addRound(); setConfirmRound(null); }}>＋ 차수 추가</button>
+          {rounds.length > 1 && (
+            confirmRound === roundIdx ? (
+              <>
+                <button className="link-btn danger" onClick={() => { removeRound(roundIdx); setConfirmRound(null); }}>정말 삭제</button>
+                <button className="link-btn" onClick={() => setConfirmRound(null)}>취소</button>
+              </>
+            ) : (
+              <button className="link-btn danger" onClick={() => setConfirmRound(roundIdx)}>
+                {roundIdx + 1}차 삭제
+              </button>
+            )
+          )}
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>
+          한 달에 커피를 여러 번 마시면 차수를 추가하세요. 아래에서 선택한 차수의 카페를 지정합니다.
+        </div>
+      </section>
+
+      <section className="step">
+        <div className="step-label">{monthNum}월 {roundIdx + 1}차 카페를 선택하세요</div>
+        <div className="cafe-cards">
+          {data.cafes.map((c) => (
+            <button key={c.id}
+              className={"cafe-card" + (round.cafeId === c.id ? " on" : "")}
+              onClick={() => setRoundCafe(c.id)}>
+              <span className="cafe-card-name">{c.name}</span>
+              {round.cafeId === c.id && <span className="cafe-card-check">✓ {roundIdx + 1}차 카페</span>}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="step">
+        <div className="step-label">카페 추가</div>
+        <div className="inline-form">
+          <input value={newCafe} placeholder="카페 이름" onChange={(e) => setNewCafe(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addCafe()} />
+          <button className="primary" onClick={addCafe}>추가</button>
+        </div>
+      </section>
+
+      {data.cafes.map((c) => {
+        const f = getForm(c.id);
+        const of = getOptForm(c.id);
+        return (
+          <section className="step" key={c.id}>
+            <div className="step-label">
+              {c.name} <span className="hint">메뉴 {c.menus.length}개</span>
+              <button className="chip small" onClick={() => setOpenCafe(openCafe === c.id ? null : c.id)}>
+                {openCafe === c.id ? "메뉴 편집 닫기" : "메뉴 편집"}
+              </button>
+              {confirmCafe === c.id ? (
+                <>
+                  <button className="link-btn danger" onClick={() => { removeCafe(c.id); setConfirmCafe(null); }}>정말 삭제</button>
+                  <button className="link-btn" onClick={() => setConfirmCafe(null)}>취소</button>
+                </>
+              ) : (
+                <button className="link-btn danger" onClick={() => setConfirmCafe(c.id)}>카페 삭제</button>
+              )}
+            </div>
+
+            {openCafe === c.id && (<>
+            <div className="chip-row" style={{ marginBottom: 12 }}>
+              {c.menus.map((m, i) => (
+                <span key={m.cat + m.name + i} className={"chip static " + m.temp}>
+                  <button className="chip-edit" title="클릭해서 수정" onClick={() => editMenu(c.id, i)}>
+                    {m.name} <b>{m.price.toLocaleString()}</b>
+                  </button>
+                  <button className="x" onClick={() => removeMenu(c.id, i)}>×</button>
+                </span>
+              ))}
+            </div>
+
+            <div className="inline-form">
+              <input className="narrow" value={f.cat} placeholder="카테고리"
+                onChange={(e) => setForm(c.id, { ...f, cat: e.target.value })} />
+              <input value={f.name} placeholder="메뉴 이름"
+                onChange={(e) => setForm(c.id, { ...f, name: e.target.value })} />
+              <input className="narrow" value={f.price} placeholder="가격"
+                onChange={(e) => setForm(c.id, { ...f, price: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && saveMenu(c.id)} />
+              <select value={f.temp} onChange={(e) => setForm(c.id, { ...f, temp: e.target.value })}>
+                <option value="both">핫 · 아이스</option>
+                <option value="hot">핫 전용</option>
+                <option value="ice">아이스 전용</option>
+              </select>
+              <button className="primary" onClick={() => saveMenu(c.id)}>
+                {f.editIndex !== null ? "수정 저장" : "메뉴 추가"}
+              </button>
+              {f.editIndex !== null && (
+                <button className="chip" onClick={() => setForm(c.id, { cat: "", name: "", price: "", temp: "both", editIndex: null })}>취소</button>
+              )}
+            </div>
+            <div className="hint" style={{ marginTop: 6 }}>메뉴를 클릭하면 수정할 수 있습니다.</div>
+
+            <div className="step-label" style={{ marginTop: 16 }}>옵션</div>
+            <div className="chip-row">
+              {c.options.map((o) => (
+                <span key={o.name} className="chip static">
+                  {o.name}{o.delta !== 0 && ` ${o.delta > 0 ? "+" : ""}${o.delta.toLocaleString()}`}
+                  <button className="x" onClick={() => removeOption(c.id, o.name)}>×</button>
+                </span>
+              ))}
+            </div>
+            <div className="inline-form">
+              <input value={of.name} placeholder="옵션 이름 (예: 샷추가)"
+                onChange={(e) => setOptForm(c.id, { ...of, name: e.target.value })} />
+              <input className="narrow" value={of.delta} placeholder="추가 금액"
+                onChange={(e) => setOptForm(c.id, { ...of, delta: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && addOption(c.id)} />
+              <button className="primary" onClick={() => addOption(c.id)}>옵션 추가</button>
+            </div>
+            </>)}
+          </section>
+        );
+      })}
+    </main>
+  );
+}
+
+/* ── 팀원 관리 ────────────────────────────────────────── */
+function MemberView({ data, update }) {
+  const [name, setName] = useState("");
+  const [bm, setBm] = useState("");
+  const [bd, setBd] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [edit, setEdit] = useState({ name: "", bm: "", bd: "" });
+  const [confirmId, setConfirmId] = useState(null);
+
+  const sortMode = data.settings.memberSort;
+  const members = sortMembers(data.members, sortMode);
+
+  const setSort = (mode) => update((d) => { d.settings.memberSort = mode; return d; });
+
+  const add = () => {
+    if (!name.trim()) return;
+    update((d) => {
+      d.members.push({ id: uid(), name: name.trim(), bMonth: Number(bm) || null, bDay: Number(bd) || null });
+      return d;
+    });
+    setName(""); setBm(""); setBd("");
+  };
+  const startEdit = (m) => {
+    setEditId(m.id);
+    setEdit({ name: m.name, bm: m.bMonth ? String(m.bMonth) : "", bd: m.bDay ? String(m.bDay) : "" });
+  };
+  const saveEdit = () => {
+    if (!edit.name.trim()) return;
+    update((d) => {
+      const m = d.members.find((x) => x.id === editId);
+      if (m) {
+        m.name = edit.name.trim();
+        m.bMonth = Number(edit.bm) || null;
+        m.bDay = Number(edit.bd) || null;
+      }
+      return d;
+    });
+    setEditId(null);
+  };
+  const remove = (id) => update((d) => { d.members = d.members.filter((m) => m.id !== id); return d; });
+  const toggleLeave = (id) =>
+    update((d) => {
+      const m = d.members.find((x) => x.id === id);
+      if (m) m.onLeave = !m.onLeave;
+      return d;
+    });
+
+  return (
+    <main className="pane">
+      <section className="step">
+        <div className="step-label">팀원 추가</div>
+        <div className="inline-form">
+          <input value={name} placeholder="이름" onChange={(e) => setName(e.target.value)} />
+          <input className="narrow" value={bm} placeholder="생일 월" onChange={(e) => setBm(e.target.value)} />
+          <input className="narrow" value={bd} placeholder="일" onChange={(e) => setBd(e.target.value)} />
+          <button className="primary" onClick={add}>추가</button>
+        </div>
+      </section>
+
+      <section className="step">
+        <div className="step-label">
+          팀원 {data.members.length}명
+          <span className="sort-toggle">
+            <button className={"chip small" + (sortMode === "name" ? " on" : "")} onClick={() => setSort("name")}>가나다순</button>
+            <button className={"chip small" + (sortMode === "birthday" ? " on" : "")} onClick={() => setSort("birthday")}>생일순</button>
+          </span>
+        </div>
+        <table className="tally">
+          <tbody>
+            {members.map((m) =>
+              editId === m.id ? (
+                <tr key={m.id} className="edit-row">
+                  <td className="t-menu">
+                    <input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+                  </td>
+                  <td className="t-who">
+                    <input className="mini" value={edit.bm} placeholder="월" onChange={(e) => setEdit({ ...edit, bm: e.target.value })} />
+                    <span> / </span>
+                    <input className="mini" value={edit.bd} placeholder="일" onChange={(e) => setEdit({ ...edit, bd: e.target.value })}
+                      onKeyDown={(e) => e.key === "Enter" && saveEdit()} />
+                  </td>
+                  <td className="t-count">
+                    <button className="link-btn" onClick={saveEdit}>저장</button>
+                    <button className="link-btn" onClick={() => setEditId(null)}>취소</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={m.id} className={m.onLeave ? "leave-row" : ""}>
+                  <td className="t-menu">
+                    {m.name}
+                    {m.onLeave && <span className="leave-badge">휴직</span>}
+                  </td>
+                  <td className="t-who">{m.bMonth ? `${m.bMonth}/${m.bDay}` : "-"}</td>
+                  <td className="t-count">
+                    {confirmId === m.id ? (
+                      <>
+                        <button className="link-btn danger" onClick={() => { remove(m.id); setConfirmId(null); }}>정말 삭제</button>
+                        <button className="link-btn" onClick={() => setConfirmId(null)}>취소</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="link-btn" onClick={() => { startEdit(m); setConfirmId(null); }}>수정</button>
+                        <button className="link-btn" onClick={() => toggleLeave(m.id)}>
+                          {m.onLeave ? "복직" : "휴직 처리"}
+                        </button>
+                        <button className="link-btn danger" onClick={() => setConfirmId(m.id)}>삭제</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              )
+            )}
+          </tbody>
+        </table>
+      </section>
+    </main>
+  );
+}
+
+/* ── 스타일 ───────────────────────────────────────────── */
+function Style() {
+  return (
+    <style>{`
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+
+.bck-root {
+  --bg:#F4F4F6; --card:#FFFFFF; --ink:#191714; --sub:#8A857D; --line:#E6E3DE;
+  --hot:#D9480F; --hot-bg:#FFF1E6; --hot-line:#FFD8BF;
+  --ice:#1864AB; --ice-bg:#E7F3FF; --ice-line:#BBDDFC;
+  --act:#26211C; --gold:#F2B705;
+  font-family:'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif;
+  background:var(--bg); color:var(--ink); min-height:100vh; padding-bottom:60px;
+}
+.bck-root * { box-sizing:border-box; }
+.loading { padding:60px; text-align:center; color:var(--sub); }
+
+.top { background:var(--card); border-bottom:1px solid var(--line); padding:20px 24px 0; }
+.title-row { display:flex; align-items:baseline; gap:12px; }
+h1 { font-size:22px; font-weight:900; margin:0; letter-spacing:-0.5px; }
+.save-dot { font-size:11px; color:var(--sub); }
+.save-dot.error { color:var(--hot); font-weight:700; }
+.month-nav { display:flex; align-items:center; gap:12px; margin:14px 0 4px; }
+.mbtn { width:36px; height:36px; border-radius:10px; border:1px solid var(--line);
+  background:var(--card); font-size:18px; cursor:pointer; }
+.mbtn:hover { background:var(--bg); }
+.month-label { font-size:17px; font-weight:700; display:flex; flex-direction:column; }
+.bday-banner { margin:10px 0 2px; background:#FFF7DE; border:1.5px solid var(--gold);
+  border-radius:12px; padding:12px 16px; font-size:17px; font-weight:700; letter-spacing:-0.2px; }
+.bday-banner b { color:#B07E00; font-weight:900; margin-right:4px; }
+.chip.bday { border-color:var(--gold); background:#FFF7DE; font-weight:700; }
+.chip.bday.on { background:var(--gold); color:var(--ink); border-color:var(--gold); }
+.tabs { display:flex; gap:4px; margin-top:14px; overflow-x:auto; }
+.tab { border:none; background:none; padding:10px 14px; font-size:14px; font-weight:500;
+  color:var(--sub); cursor:pointer; border-bottom:3px solid transparent; font-family:inherit; white-space:nowrap; }
+.tab.on { color:var(--ink); font-weight:700; border-bottom-color:var(--act); }
+.badge { background:var(--gold); color:var(--ink); border-radius:9px; font-size:11px;
+  font-weight:700; padding:1px 6px; margin-left:5px; }
+
+.pane { max-width:920px; margin:0 auto; padding:20px 24px; display:flex; flex-direction:column; gap:16px; }
+.step { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 20px; }
+.step-label { font-size:13px; font-weight:700; color:var(--sub); margin-bottom:12px;
+  letter-spacing:0.4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.my-order { font-weight:400; letter-spacing:0; color:var(--ink); font-size:13px; }
+.my-order b { color:var(--ice); }
+.sort-toggle { display:inline-flex; gap:6px; margin-left:auto; }
+
+.chip-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.chip { border:1.5px solid var(--line); background:var(--card); border-radius:999px;
+  padding:9px 16px; font-size:14px; font-weight:500; cursor:pointer; font-family:inherit; transition:all .12s; }
+.chip.small { padding:5px 12px; font-size:12px; }
+.chip:hover { border-color:var(--act); }
+.chip.on { background:var(--act); color:#fff; border-color:var(--act); font-weight:700; }
+.chip.done { border-style:dashed; color:var(--sub); }
+.chip.done.on { color:#fff; }
+.chip.static { cursor:default; display:inline-flex; align-items:center; gap:6px; }
+.chip.static.hot { background:var(--hot-bg); border-color:var(--hot-line); color:var(--hot); }
+.chip.static.ice { background:var(--ice-bg); border-color:var(--ice-line); color:var(--ice); }
+.chip-edit { border:none; background:none; color:inherit; font:inherit; cursor:pointer; padding:0; }
+.chip-edit b { font-weight:700; opacity:.75; margin-left:2px; }
+.chip .x { border:none; background:none; cursor:pointer; font-size:15px; color:inherit; opacity:.6; padding:0; }
+.chip .x:hover { opacity:1; }
+.cafe-chip.on { background:var(--gold); color:var(--ink); border-color:var(--gold); }
+.step.slim { padding:14px 20px; }
+.cur-cafe { font-size:15px; font-weight:900; color:var(--ink); letter-spacing:-0.2px; }
+.round-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:12px 0 2px; }
+.round-title { font-size:12px; font-weight:700; color:var(--sub); }
+.round-chip.on { background:var(--act); }
+.cafe-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; }
+.cafe-card { border:2.5px solid var(--line); border-radius:18px; background:var(--card);
+  padding:26px 18px; min-height:110px; cursor:pointer; font-family:inherit;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+  transition:transform .1s, box-shadow .1s, border-color .1s; }
+.cafe-card:hover { transform:translateY(-2px); box-shadow:0 6px 14px rgba(0,0,0,.08); border-color:var(--act); }
+.cafe-card.on { border-color:var(--gold); background:#FFF7DE; }
+.cafe-card-name { font-size:22px; font-weight:900; letter-spacing:-0.5px; }
+.cafe-card-check { font-size:12.5px; font-weight:900; color:#B07E00; }
+.temp-hot { border-color:var(--hot-line); color:var(--hot); background:var(--hot-bg); }
+.temp-hot.on { background:var(--hot); border-color:var(--hot); color:#fff; }
+.temp-ice { border-color:var(--ice-line); color:var(--ice); background:var(--ice-bg); }
+.temp-ice.on { background:var(--ice); border-color:var(--ice); color:#fff; }
+
+.menu-group { margin-bottom:16px; }
+.cat-label { font-size:12px; font-weight:900; letter-spacing:1.5px; color:var(--sub);
+  margin:4px 0 8px; border-left:3px solid var(--gold); padding-left:8px; }
+.menu-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+.tile { border-radius:14px; border:2px solid var(--line); background:var(--card);
+  padding:12px; min-height:92px; cursor:pointer; font-family:inherit;
+  display:flex; flex-direction:column; gap:5px; align-items:flex-start; text-align:left;
+  transition:transform .1s, box-shadow .1s; }
+.tile:hover { transform:translateY(-2px); box-shadow:0 4px 10px rgba(0,0,0,.07); }
+.tile.hot { background:var(--hot-bg); border-color:var(--hot-line); }
+.tile.ice { background:var(--ice-bg); border-color:var(--ice-line); }
+.tile.on { border-color:var(--act); box-shadow:0 0 0 2px var(--act); }
+.tile-temp { font-size:9.5px; font-weight:900; letter-spacing:1px; color:var(--sub); }
+.tile.hot .tile-temp { color:var(--hot); }
+.tile.ice .tile-temp { color:var(--ice); }
+.tile-name { font-size:14px; font-weight:700; line-height:1.3; word-break:keep-all; }
+.tile-price { font-size:12.5px; font-weight:500; color:var(--sub); margin-top:auto; }
+
+.confirm { border-color:var(--act); }
+.opt-chip.on { background:var(--ice); border-color:var(--ice); }
+.opt-input { border:1.5px solid var(--line); border-radius:999px; padding:9px 16px;
+  font-size:14px; font-family:inherit; width:130px; }
+.primary { background:var(--act); color:#fff; border:none; border-radius:12px;
+  padding:11px 20px; font-size:14.5px; font-weight:700; cursor:pointer; font-family:inherit; }
+.primary:hover { opacity:.9; }
+.primary:disabled { opacity:.35; cursor:not-allowed; }
+.primary.big { width:100%; margin-top:14px; padding:15px; font-size:16px; }
+
+.tally { width:100%; border-collapse:collapse; margin-bottom:14px; }
+.tally td { padding:10px 8px; border-bottom:1px solid var(--line); font-size:14.5px; vertical-align:top; }
+.thead-row td { font-size:12px; font-weight:700; color:var(--sub); border-bottom:2px solid var(--line); }
+.t-menu { font-weight:700; width:38%; }
+.t-menu.hot { color:var(--hot); }
+.t-menu.ice { color:var(--ice); }
+.t-count { font-weight:900; font-size:15px; width:70px; text-align:center; white-space:nowrap; }
+.t-amt { font-weight:700; width:110px; text-align:right; white-space:nowrap; }
+.t-who { color:var(--sub); font-size:13px; }
+.total-row td { border-bottom:none; border-top:2px solid var(--ink); font-weight:900; }
+.edit-row input { border:1.5px solid var(--line); border-radius:8px; padding:6px 10px;
+  font-size:14px; font-family:inherit; width:120px; }
+.edit-row input.mini { width:52px; }
+
+.inline-form { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; align-items:center; }
+.inline-form input, .inline-form select { border:1.5px solid var(--line); border-radius:10px;
+  padding:10px 14px; font-size:14px; font-family:inherit; flex:1; min-width:150px; background:var(--card); }
+.inline-form input.narrow { flex:0; min-width:90px; width:100px; }
+.inline-form select { flex:0; min-width:120px; }
+.hint { font-size:12.5px; color:var(--sub); font-weight:400; letter-spacing:0; }
+.hint.pad { padding:8px 0; }
+.link-btn { border:none; background:none; color:var(--ice); font-size:12px; cursor:pointer;
+  text-decoration:underline; font-family:inherit; padding:0; margin-left:6px; }
+.link-btn.danger { color:var(--hot); }
+.who-item { display:inline-flex; align-items:center; gap:2px; margin-right:8px; }
+.who-x { border:none; background:none; color:var(--sub); cursor:pointer; font-size:13px; padding:0 2px; }
+.who-x:hover { color:var(--hot); }
+
+.bday-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.card-btn { border:1.5px solid var(--gold); background:#fff; color:#B07E00; border-radius:999px;
+  padding:8px 16px; font-size:13.5px; font-weight:900; cursor:pointer; font-family:inherit; white-space:nowrap; }
+.card-btn:hover { background:var(--gold); color:var(--ink); }
+
+.modal-bg { position:fixed; inset:0; background:rgba(25,23,20,.45); z-index:50;
+  display:flex; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; }
+.modal { background:var(--card); border-radius:20px; padding:22px 24px; width:100%; max-width:640px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25); }
+.modal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.modal-title { font-size:17px; font-weight:900; }
+.card-input { width:100%; border:1.5px solid var(--line); border-radius:12px; padding:12px 14px;
+  font-size:14.5px; font-family:inherit; margin:12px 0 10px; resize:vertical; }
+.card-wall { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:12px; margin-top:18px; }
+.bcard { border-radius:4px 14px 14px 14px; padding:14px 14px 10px; min-height:90px;
+  display:flex; flex-direction:column; box-shadow:0 3px 8px rgba(0,0,0,.08); }
+.bcard.tone-a { background:#FFF3C9; }
+.bcard.tone-b { background:#FFE3E0; }
+.bcard.tone-c { background:#E2F3E4; }
+.bcard.tone-d { background:#E7F0FF; }
+.bcard-text { font-size:14px; line-height:1.5; white-space:pre-wrap; word-break:keep-all; flex:1; }
+.bcard-from { font-size:12px; font-weight:700; color:rgba(25,23,20,.55); margin-top:10px;
+  display:flex; align-items:center; gap:4px; }
+.bcard-x { border:none; background:none; color:rgba(25,23,20,.35); cursor:pointer;
+  font-size:14px; padding:0 2px; margin-left:auto; }
+.bcard-x:hover { color:var(--hot); }
+.admin-chip { border:1.5px solid var(--gold); background:#FFF7DE; color:#B07E00;
+  border-radius:999px; padding:4px 12px; font-size:11.5px; font-weight:900;
+  cursor:pointer; font-family:inherit; margin-left:auto; }
+.pin-modal { max-width:360px; }
+.pin-input { width:100%; border:1.5px solid var(--line); border-radius:12px;
+  padding:12px 14px; font-size:18px; letter-spacing:6px; text-align:center;
+  font-family:inherit; margin-top:12px; }
+.pin-err { color:var(--hot); font-size:12.5px; font-weight:700; margin-top:8px; }
+.chip.leave { color:var(--sub); background:var(--bg); border-style:dashed; cursor:default; }
+.chip.absent { color:var(--sub); background:var(--bg); border-style:dashed; text-decoration:line-through; }
+.chip.absent.on { background:var(--act); color:#fff; text-decoration:line-through; }
+.leave-row .t-menu, .leave-row .t-who { color:var(--sub); }
+.leave-badge { display:inline-block; margin-left:8px; font-size:10.5px; font-weight:700;
+  color:var(--sub); border:1px solid var(--line); background:var(--bg);
+  border-radius:6px; padding:1px 7px; vertical-align:middle; }
+
+@media (max-width:520px) {
+  .pane { padding:14px 12px; }
+  .menu-grid { grid-template-columns:repeat(2, 1fr); }
+  .top { padding:16px 14px 0; }
+}
+`}</style>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<BirthdayCoffeeKiosk />);
+  </script>
+</body>
+</html>
