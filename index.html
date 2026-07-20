@@ -193,9 +193,6 @@ const CAFE_BROWNBENCH = {
     { name: "연하게", delta: 0 }, { name: "얼음 적게", delta: 0 },
   ],
   menus: [
-    M("모닝세트 (AM7~10)", "세트A 머핀세트 (블루베리/초코 + 아메리카노)", 4000, "both"),
-    M("모닝세트 (AM7~10)", "세트B 프레즐세트 (프레즐 + 아메리카노)", 4000, "both"),
-    M("모닝세트 (AM7~10)", "세트C 베이글세트 (플레인/블루베리/어니언 + 아메리카노)", 4000, "both"),
     M("커피", "에스프레소", 2800, "hot"),
     M("커피", "에스프레소 도피오", 3300, "hot"),
     M("커피", "아메리카노", 2800, "both"),
@@ -216,10 +213,6 @@ const CAFE_BROWNBENCH = {
     M("허브티", "텐지레몬 (레몬스카이)", 3500, "both"),
     M("허브티", "오베리 (레드베리)", 4000, "both"),
     M("허브티", "자몽향", 4000, "both"),
-    M("에이드", "레몬에이드", 4800, "ice"),
-    M("에이드", "자몽에이드", 4800, "ice"),
-    M("에이드", "깔라만시에이드", 4800, "ice"),
-    M("에이드", "패션후르츠에이드", 4800, "ice"),
   ],
 };
 
@@ -273,13 +266,33 @@ const sortMembers = (members, mode) => {
   }
   return arr;
 };
+const fmtDateShort = (dateStr) => {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
+};
+const quarterKey = (d) => `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+const quarterLabel = (key) => { const [y, q] = key.split("-Q"); return `${y}년 ${q}분기`; };
+const quarterMonths = (key) => {
+  const [y, q] = key.split("-Q").map(Number);
+  const startM = (q - 1) * 3 + 1;
+  return [startM, startM + 1, startM + 2].map((m) => `${y}-${String(m).padStart(2, "0")}`);
+};
+const shiftQuarter = (key, delta) => {
+  const [y, q] = key.split("-Q").map(Number);
+  const idx = y * 4 + (q - 1) + delta;
+  const ny = Math.floor(idx / 4);
+  const nq = (idx % 4 + 4) % 4 + 1;
+  return `${ny}-Q${nq}`;
+};
 
 /* ▼▼▼ 아래 따옴표 안에 Apps Script 웹 앱 URL(…/exec)을 붙여넣으세요 ▼▼▼ */
 const API_URL = "https://script.google.com/macros/s/AKfycbwG29FOJTbuEgx2-w9PHRogZWG7cce_ruLEwyotjhJdSHzIrMp8gyrcHl7mUiDO8w7o/exec";
 
 /* ▼ 관리자 비밀번호 — 원하는 번호로 바꾸세요 ▼ */
 const ADMIN_PIN = "1025";
-const ADMIN_TABS = ["cafes", "members"];
+const ADMIN_TABS = ["cafes", "members", "budget"];
 
 async function apiLoadRemote() {
   const res = await fetch(API_URL + "?action=load");
@@ -327,6 +340,11 @@ async function loadData() {
         if (!d.cafes.some((c) => c.name === "브라운벤치")) d.cafes.push(CAFE_BROWNBENCH);
         d.settings.brownBench1 = true;
       }
+      if (!d.settings.brownBenchMenuFix1) {
+        const bb = d.cafes.find((c) => c.name === "브라운벤치");
+        if (bb) bb.menus = bb.menus.filter((m) => m.cat !== "모닝세트 (AM7~10)" && m.cat !== "에이드");
+        d.settings.brownBenchMenuFix1 = true;
+      }
       return d;
     }
   } catch (e) { /* 첫 실행 */ }
@@ -347,9 +365,19 @@ function BirthdayCoffeeKiosk() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [pinAsk, setPinAsk] = useState(null); // 잠긴 탭 이동 요청
   const [saveState, setSaveState] = useState("idle");
+  const [todayPopupOpen, setTodayPopupOpen] = useState(false);
+  const [todayPopupDismissed, setTodayPopupDismissed] = useState(false);
 
   useEffect(() => { loadData().then(setData); }, []);
   useEffect(() => { setRoundIdx(0); setCardOpen(false); }, [month]);
+  useEffect(() => {
+    if (!data || todayPopupDismissed) return;
+    const now = new Date();
+    const hit = data.members.some(
+      (m) => !m.onLeave && m.bMonth === now.getMonth() + 1 && m.bDay === now.getDate()
+    );
+    if (hit) setTodayPopupOpen(true);
+  }, [data, todayPopupDismissed]);
 
   const update = useCallback((fn) => {
     setData((prev) => {
@@ -404,6 +432,45 @@ function BirthdayCoffeeKiosk() {
   const cards = data.sessions[month]?.cards || [];
   const curMonthNum = Number(month.split("-")[1]);
   const birthdayPeople = data.members.filter((m) => m.bMonth === curMonthNum);
+  const today = new Date();
+  const todayBirthdayPeople = data.members.filter(
+    (m) => !m.onLeave && m.bMonth === today.getMonth() + 1 && m.bDay === today.getDate()
+  );
+  const todayMonthKey = monthKey(today);
+  const todayImage = data.sessions[todayMonthKey]?.bdayImage || null;
+  const bdayImage = data.sessions[month]?.bdayImage || null;
+
+  const handleImageUpload = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 900;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        updateMonth((s) => { s.bdayImage = dataUrl; });
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  const removeImage = () => updateMonth((s) => { delete s.bdayImage; });
+  const goWriteTodayCard = () => {
+    setMonth(todayMonthKey);
+    setCardOpen(true);
+    setTodayPopupOpen(false);
+    setTodayPopupDismissed(true);
+  };
+  const closeTodayPopup = () => { setTodayPopupOpen(false); setTodayPopupDismissed(true); };
 
   return (
     <div className="bck-root">
@@ -427,17 +494,12 @@ function BirthdayCoffeeKiosk() {
             {monthLabel(month)}
           </div>
           <button className="mbtn" onClick={() => setMonth(shiftMonth(month, 1))}>›</button>
-        </div>
-        {birthdayPeople.length > 0 && (
-          <div className="bday-banner">
-            <span>
-              🎂 <b>축하합니다!</b> {birthdayPeople.map((p) => `${p.name} (${p.bMonth}/${p.bDay})`).join(" · ")}
-            </span>
-            <button className="card-btn" onClick={() => setCardOpen(true)}>
-              💌 축하 카드 쓰기{cards.length > 0 ? ` · ${cards.length}장 보기` : ""}
+          {birthdayPeople.length > 0 && (
+            <button className="month-bday-tag" onClick={() => setTab("hbd")}>
+              🎂 {birthdayPeople.map((p) => p.name).join(", ")}
             </button>
-          </div>
-        )}
+          )}
+        </div>
         {rounds.length > 1 && (
           <div className="round-row">
             <span className="round-title">주문 차수</span>
@@ -447,22 +509,32 @@ function BirthdayCoffeeKiosk() {
                 <button key={r.id}
                   className={"chip small round-chip" + (i === safeIdx ? " on" : "")}
                   onClick={() => setRoundIdx(i)}>
-                  {i + 1}차{cname ? ` · ${cname}` : ""}
+                  {i + 1}차{cname ? ` · ${cname}` : ""}{r.date ? ` · ${fmtDateShort(r.date)}` : ""}
                 </button>
               );
             })}
           </div>
         )}
         <nav className="tabs">
-          {[["order", "주문하기"], ["summary", "집계"], ["cafes", "카페 관리"], ["members", "팀원 관리"]].map(([k, label]) => (
+          {[["hbd", "HBD"], ["order", "주문하기"], ["summary", "집계"], ["budget", "예산"], ["cafes", "카페 관리"], ["members", "팀원 관리"]].map(([k, label]) => (
             <button key={k} className={"tab" + (tab === k ? " on" : "")}
               onClick={() => { if (ADMIN_TABS.includes(k) && !isAdmin) setPinAsk(k); else setTab(k); }}>
               {label}{ADMIN_TABS.includes(k) && !isAdmin ? " 🔒" : ""}
               {k === "summary" && round.orders.length > 0 && <span className="badge">{round.orders.length}</span>}
+              {k === "hbd" && birthdayPeople.length > 0 && <span className="badge">{birthdayPeople.length}</span>}
             </button>
           ))}
         </nav>
       </header>
+
+      {todayPopupOpen && (
+        <TodayBirthdayPopup
+          people={todayBirthdayPeople}
+          image={todayImage}
+          onWriteCard={goWriteTodayCard}
+          onClose={closeTodayPopup}
+        />
+      )}
 
       {cardOpen && (
         <CardModal
@@ -482,8 +554,16 @@ function BirthdayCoffeeKiosk() {
         />
       )}
 
+      {tab === "hbd" && (
+        <HbdView
+          data={data} month={month} cards={cards} birthdayPeople={birthdayPeople} bdayImage={bdayImage}
+          rounds={rounds}
+          onUpload={handleImageUpload} onRemoveImage={removeImage} onWriteCard={() => setCardOpen(true)}
+        />
+      )}
       {tab === "order" && <OrderView data={data} month={month} round={round} roundIdx={safeIdx} updateRound={updateRound} />}
       {tab === "summary" && <SummaryView data={data} month={month} rounds={rounds} roundIdx={safeIdx} updateRound={updateRound} isAdmin={isAdmin} />}
+      {tab === "budget" && <BudgetView data={data} update={update} />}
       {tab === "cafes" && (
         <CafeView data={data} month={month} rounds={rounds} roundIdx={safeIdx} setRoundIdx={setRoundIdx}
           addRound={addRound} removeRound={removeRound} updateRound={updateRound} update={update} />
@@ -584,6 +664,143 @@ function CardModal({ data, month, cards, birthdayPeople, updateMonth, onClose })
   );
 }
 
+/* ── 오늘의 생일 축하 팝업 ─────────────────────────────── */
+function TodayBirthdayPopup({ people, image, onWriteCard, onClose }) {
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal today-popup" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div className="modal-title">🎉🎂 오늘의 생일</div>
+          <button className="mbtn" onClick={onClose}>✕</button>
+        </div>
+        <div className="today-popup-names">
+          {people.map((p) => p.name).join(", ")}님, 생일 축하드려요! 🎉
+        </div>
+        {image && <img src={image} alt="생일 축하 이미지" className="today-popup-image" />}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button className="primary" onClick={onWriteCard}>💌 축하 카드 쓰러 가기</button>
+          <button className="chip" onClick={onClose}>닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── HBD: 생일 확인 달력 ──────────────────────────────── */
+function HbdView({ data, month, cards, birthdayPeople, bdayImage, rounds, onUpload, onRemoveImage, onWriteCard }) {
+  const [selectedDay, setSelectedDay] = useState(null);
+  const [y, m] = month.split("-").map(Number);
+  const firstWeekday = new Date(y, m - 1, 1).getDay();
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const todayReal = new Date();
+  const isRealMonth = todayReal.getFullYear() === y && todayReal.getMonth() + 1 === m;
+
+  const byDay = {};
+  birthdayPeople.forEach((p) => {
+    if (!byDay[p.bDay]) byDay[p.bDay] = [];
+    byDay[p.bDay].push(p);
+  });
+
+  const coffeeByDay = {};
+  (rounds || []).forEach((r) => {
+    if (!r.date) return;
+    const [ry, rm, rd] = r.date.split("-").map(Number);
+    if (ry === y && rm === m) {
+      if (!coffeeByDay[rd]) coffeeByDay[rd] = [];
+      const cafeName = data.cafes.find((c) => c.id === r.cafeId)?.name;
+      coffeeByDay[rd].push({ ...r, cafeName });
+    }
+  });
+
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const selectedPeople = selectedDay ? (byDay[selectedDay] || []) : [];
+  const selectedCoffee = selectedDay ? (coffeeByDay[selectedDay] || []) : [];
+
+  return (
+    <main className="pane">
+      <div className="hbd-layout">
+        <section className="step hbd-cal-card">
+          <div className="step-label">{monthLabel(month)} 생일 달력</div>
+          <div className="cal-grid">
+            {["일", "월", "화", "수", "목", "금", "토"].map((w) => (
+              <div key={w} className="cal-dow">{w}</div>
+            ))}
+            {cells.map((d, i) => {
+              if (d === null) return <div key={"e" + i} className="cal-cell empty" />;
+              const people = byDay[d] || [];
+              const coffee = coffeeByDay[d] || [];
+              const isToday = isRealMonth && todayReal.getDate() === d;
+              return (
+                <button key={d}
+                  className={"cal-cell" + (people.length ? " has-bday" : "") + (coffee.length ? " has-coffee" : "") + (isToday ? " is-today" : "") + (selectedDay === d ? " selected" : "")}
+                  onClick={() => (people.length > 0 || coffee.length > 0) && setSelectedDay(selectedDay === d ? null : d)}>
+                  <span className="cal-date">{d}</span>
+                  {people.length > 0 && (
+                    <span className="cal-names">
+                      {people.map((p) => (<span key={p.id} className="cal-name">{p.name}HBD</span>))}
+                    </span>
+                  )}
+                  {coffee.length > 0 && <span className="cal-coffee">☕ 커피데이</span>}
+                </button>
+              );
+            })}
+          </div>
+          {(selectedPeople.length > 0 || selectedCoffee.length > 0) && (
+            <div className="hint pad">
+              {selectedPeople.length > 0 && <>🎂 {selectedDay}일 생일: {selectedPeople.map((p) => p.name).join(", ")}<br /></>}
+              {selectedCoffee.length > 0 && <>☕ {selectedDay}일 커피: {selectedCoffee.map((r) => r.cafeName || "카페 미정").join(", ")}</>}
+            </div>
+          )}
+          {birthdayPeople.length === 0 && (
+            <div className="hint pad">이번 달은 생일자가 없어요.</div>
+          )}
+        </section>
+
+        <div className="hbd-side">
+          {birthdayPeople.length > 0 && (
+            <section className="step slim">
+              <div className="step-label" style={{ marginBottom: 0 }}>
+                🎉 이번 달 생일자
+                <span className="my-order">{birthdayPeople.map((p) => `${p.name} (${p.bMonth}/${p.bDay})`).join(" · ")}</span>
+              </div>
+              <button className="card-btn" style={{ marginTop: 10 }} onClick={onWriteCard}>
+                💌 축하 카드 쓰기{cards.length > 0 ? ` · ${cards.length}장 보기` : ""}
+              </button>
+            </section>
+          )}
+
+          <section className="step">
+            <div className="step-label">축하 이미지</div>
+            {bdayImage ? (
+              <>
+                <img src={bdayImage} alt="생일 축하 이미지" className="bday-image-big" />
+                <div className="chip-row" style={{ marginTop: 10 }}>
+                  <button className="link-btn danger" onClick={onRemoveImage}>이미지 삭제</button>
+                  <label className="link-btn" style={{ cursor: "pointer" }}>
+                    이미지 바꾸기
+                    <input type="file" accept="image/*" style={{ display: "none" }}
+                      onChange={(e) => onUpload(e.target.files[0])} />
+                  </label>
+                </div>
+              </>
+            ) : (
+              <label className="chip" style={{ cursor: "pointer" }}>
+                🖼 축하 이미지 올리기
+                <input type="file" accept="image/*" style={{ display: "none" }}
+                  onChange={(e) => onUpload(e.target.files[0])} />
+              </label>
+            )}
+            <div className="hint" style={{ marginTop: 8 }}>용량이 큰 이미지는 자동으로 줄여서 저장돼요.</div>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 /* ── 주문(키오스크) ───────────────────────────────────── */
 function OrderView({ data, month, round, roundIdx, updateRound }) {
   const [who, setWho] = useState(null);
@@ -652,7 +869,7 @@ function OrderView({ data, month, round, roundIdx, updateRound }) {
         <div className="step-label" style={{ marginBottom: 0 }}>
           {roundIdx + 1}차 카페
           {cafe ? (
-            <span className="cur-cafe">☕ {cafe.name}</span>
+            <span className="cur-cafe">☕ {cafe.name}{round.date ? ` · ${fmtDateShort(round.date)}` : ""}</span>
           ) : (
             <span className="hint">아직 지정되지 않았습니다. 카페 관리 탭에서 카페를 지정하세요.</span>
           )}
@@ -891,10 +1108,33 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
   const [confirmCafe, setConfirmCafe] = useState(null);
   const [confirmRound, setConfirmRound] = useState(null);
   const [openCafe, setOpenCafe] = useState(null);
+  const [pendingCafe, setPendingCafe] = useState(null); // 카페 변경 확인 대기 중인 cafeId
 
   const round = rounds[roundIdx];
   const monthNum = Number(month.split("-")[1]);
-  const setRoundCafe = (cafeId) => updateRound((r) => { r.cafeId = cafeId; });
+
+  // 카페를 바꾸면 이전 차수에서 남아있던 주문(다른 카페 메뉴)도 함께 초기화합니다.
+  const setRoundCafe = (cafeId) =>
+    updateRound((r) => {
+      if (r.cafeId !== cafeId) {
+        r.cafeId = cafeId;
+        r.orders = [];
+      }
+    });
+
+  const requestCafeChange = (cafeId) => {
+    if (round.cafeId === cafeId) return;
+    if (round.cafeId && round.orders.length > 0) {
+      setPendingCafe(cafeId); // 기존 주문이 있으면 확인 후 진행
+    } else {
+      setRoundCafe(cafeId);
+    }
+  };
+  const confirmCafeChange = () => {
+    setRoundCafe(pendingCafe);
+    setPendingCafe(null);
+  };
+  const setRoundDate = (dateStr) => updateRound((r) => { r.date = dateStr || null; });
 
   const getForm = (id) => forms[id] || { cat: "", name: "", price: "", temp: "both", editIndex: null };
   const setForm = (id, f) => setForms({ ...forms, [id]: f });
@@ -965,7 +1205,7 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
               <button key={r.id}
                 className={"chip round-chip" + (i === roundIdx ? " on" : "")}
                 onClick={() => { setRoundIdx(i); setConfirmRound(null); }}>
-                {i + 1}차{cname ? ` · ${cname}` : ""} ({r.orders.length}잔)
+                {i + 1}차{cname ? ` · ${cname}` : ""}{r.date ? ` · ${fmtDateShort(r.date)}` : ""} ({r.orders.length}잔)
               </button>
             );
           })}
@@ -983,8 +1223,15 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
             )
           )}
         </div>
+        <div className="inline-form" style={{ marginTop: 10 }}>
+          <span className="hint">{roundIdx + 1}차 커피 마시는 날: </span>
+          <input type="date" value={round.date || ""} onChange={(e) => setRoundDate(e.target.value)} />
+          {round.date && (
+            <button className="link-btn danger" onClick={() => setRoundDate("")}>날짜 지우기</button>
+          )}
+        </div>
         <div className="hint" style={{ marginTop: 8 }}>
-          한 달에 커피를 여러 번 마시면 차수를 추가하세요. 아래에서 선택한 차수의 카페를 지정합니다.
+          한 달에 커피를 여러 번 마시면 차수를 추가하세요. 아래에서 선택한 차수의 카페를 지정합니다. 날짜를 지정하면 HBD 달력과 주문하기 화면에 표시돼요.
         </div>
       </section>
 
@@ -994,12 +1241,19 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
           {data.cafes.map((c) => (
             <button key={c.id}
               className={"cafe-card" + (round.cafeId === c.id ? " on" : "")}
-              onClick={() => setRoundCafe(c.id)}>
+              onClick={() => requestCafeChange(c.id)}>
               <span className="cafe-card-name">{c.name}</span>
               {round.cafeId === c.id && <span className="cafe-card-check">✓ {roundIdx + 1}차 카페</span>}
             </button>
           ))}
         </div>
+        {pendingCafe && (
+          <div className="hint pad" style={{ marginTop: 4 }}>
+            ⚠ 이 차수에는 이미 주문 {round.orders.length}건이 있습니다. 카페를 바꾸면 기존 주문이 모두 삭제됩니다.
+            <button className="link-btn danger" onClick={confirmCafeChange}>그래도 변경</button>
+            <button className="link-btn" onClick={() => setPendingCafe(null)}>취소</button>
+          </div>
+        )}
       </section>
 
       <section className="step">
@@ -1209,6 +1463,184 @@ function MemberView({ data, update }) {
   );
 }
 
+/* ── 예산 관리 (분기별) ───────────────────────────────── */
+function BudgetView({ data, update }) {
+  const [quarter, setQuarter] = useState(quarterKey(new Date()));
+  const [newCodeName, setNewCodeName] = useState("");
+  const [confirmCode, setConfirmCode] = useState(null);
+
+  const budget = data.budgets?.[quarter] || { codes: [], months: {} };
+  const codes = budget.codes || [];
+  const monthsList = quarterMonths(quarter);
+
+  const updateBudget = (fn) =>
+    update((d) => {
+      if (!d.budgets) d.budgets = {};
+      if (!d.budgets[quarter]) d.budgets[quarter] = { codes: [], months: {} };
+      fn(d.budgets[quarter]);
+      return d;
+    });
+
+  const addCode = () => {
+    const name = newCodeName.trim();
+    if (!name) return;
+    updateBudget((b) => { b.codes.push({ id: uid(), name }); });
+    setNewCodeName("");
+  };
+  const setCodeName = (codeId, value) =>
+    updateBudget((b) => {
+      const c = b.codes.find((x) => x.id === codeId);
+      if (c) c.name = value;
+    });
+  const removeCode = (codeId) => {
+    updateBudget((b) => { b.codes = b.codes.filter((c) => c.id !== codeId); });
+    setConfirmCode(null);
+  };
+
+  const getEntry = (mk, codeId) =>
+    (budget.months?.[mk]?.entries?.[codeId]) || { budget: 0, snack: 0, bday: 0, party: 0, other: 0 };
+  const setEntryField = (mk, codeId, field, value) =>
+    updateBudget((b) => {
+      if (!b.months[mk]) b.months[mk] = { entries: {} };
+      if (!b.months[mk].entries[codeId]) b.months[mk].entries[codeId] = { budget: 0, snack: 0, bday: 0, party: 0, other: 0 };
+      b.months[mk].entries[codeId][field] = Number(String(value).replace(/[^0-9-]/g, "")) || 0;
+    });
+  const kioskMonthTotal = (mk) => {
+    const rs = data.sessions[mk]?.rounds || [];
+    return rs.reduce((s, r) => s + r.orders.reduce((x, o) => x + o.price, 0), 0);
+  };
+
+  // 분기 첫 달은 이월 0에서 시작하고, 분기 안에서만 잔여가 다음 달로 이월됩니다.
+  // (3개월째 잔여는 다음 분기로 넘어가지 않음)
+  const codeCalc = {};
+  codes.forEach((c) => {
+    let carry = 0;
+    codeCalc[c.id] = monthsList.map((mk) => {
+      const e = getEntry(mk, c.id);
+      const monthBudget = e.budget || 0;
+      const carryIn = carry;
+      const available = monthBudget + carryIn;
+      const sum = (e.snack || 0) + (e.bday || 0) + (e.party || 0) + (e.other || 0);
+      const remain = available - sum;
+      carry = remain;
+      return { mk, entry: e, monthBudget, carryIn, available, sum, remain };
+    });
+  });
+
+  return (
+    <main className="pane">
+      <section className="step slim">
+        <div className="step-label" style={{ marginBottom: 0 }}>
+          <button className="mbtn" onClick={() => setQuarter(shiftQuarter(quarter, -1))}>‹</button>
+          <span style={{ fontSize: 16, fontWeight: 900 }}>{quarterLabel(quarter)} 예산</span>
+          <button className="mbtn" onClick={() => setQuarter(shiftQuarter(quarter, 1))}>›</button>
+        </div>
+        <div className="hint" style={{ marginTop: 6 }}>
+          잔여 예산은 같은 분기 안에서만 다음 달로 이월돼요 (예: 7월 → 8월 → 9월). 분기가 바뀌면 이월되지 않고 0에서 다시 시작합니다.
+        </div>
+      </section>
+
+      <section className="step">
+        <div className="step-label">예산 코드</div>
+        <div className="chip-row">
+          {codes.map((c) => (
+            <span key={c.id} className="chip static">
+              <input className="opt-input" style={{ width: 130 }} value={c.name}
+                onChange={(e) => setCodeName(c.id, e.target.value)} />
+              {confirmCode === c.id ? (
+                <>
+                  <button className="link-btn danger" onClick={() => removeCode(c.id)}>삭제</button>
+                  <button className="link-btn" onClick={() => setConfirmCode(null)}>취소</button>
+                </>
+              ) : (
+                <button className="x" onClick={() => setConfirmCode(c.id)}>×</button>
+              )}
+            </span>
+          ))}
+        </div>
+        <div className="inline-form" style={{ marginTop: 10 }}>
+          <input value={newCodeName} placeholder="예산 코드 이름 (예: 판관(120309))"
+            onChange={(e) => setNewCodeName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addCode()} />
+          <button className="primary" onClick={addCode}>코드 추가</button>
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>
+          매달 예산액이 다를 수 있어서, 예산액은 아래 각 월 표에서 직접 입력해요.
+        </div>
+      </section>
+
+      {codes.length === 0 && (
+        <div className="hint pad">먼저 예산 코드를 추가하세요 (예: 판관(120309), 제조(120046)).</div>
+      )}
+
+      {codes.length > 0 && monthsList.map((mk) => {
+        const kioskTotal = kioskMonthTotal(mk);
+        let remainSum = 0;
+        return (
+          <section className="step" key={mk}>
+            <div className="step-label">{monthLabel(mk)}</div>
+            {codes.map((c) => {
+              const calc = codeCalc[c.id].find((r) => r.mk === mk);
+              const e = calc.entry;
+              remainSum += calc.remain;
+              return (
+                <div className="budget-card" key={c.id}>
+                  <div className="budget-card-head">
+                    <span className="budget-card-name">{c.name}</span>
+                    <span className="budget-card-avail">가용예산 {fmt(calc.available)}</span>
+                  </div>
+                  <div className="budget-card-inputs">
+                    <label className="budget-field">
+                      <span className="budget-field-label">이번달 예산</span>
+                      <input value={e.budget || ""} placeholder="0"
+                        onChange={(ev) => setEntryField(mk, c.id, "budget", ev.target.value)} />
+                    </label>
+                    <label className="budget-field">
+                      <span className="budget-field-label">탕비</span>
+                      <input value={e.snack || ""} placeholder="0"
+                        onChange={(ev) => setEntryField(mk, c.id, "snack", ev.target.value)} />
+                    </label>
+                    <label className="budget-field">
+                      <span className="budget-field-label">
+                        생일
+                        {kioskTotal > 0 && (
+                          <button className="link-btn" title="이 달 커피 키오스크 지출 합계 불러오기"
+                            onClick={() => setEntryField(mk, c.id, "bday", kioskTotal)}>
+                            불러오기
+                          </button>
+                        )}
+                      </span>
+                      <input value={e.bday || ""} placeholder="0"
+                        onChange={(ev) => setEntryField(mk, c.id, "bday", ev.target.value)} />
+                    </label>
+                    <label className="budget-field">
+                      <span className="budget-field-label">파트운영비</span>
+                      <input value={e.party || ""} placeholder="0"
+                        onChange={(ev) => setEntryField(mk, c.id, "party", ev.target.value)} />
+                    </label>
+                    <label className="budget-field">
+                      <span className="budget-field-label">기타</span>
+                      <input value={e.other || ""} placeholder="0"
+                        onChange={(ev) => setEntryField(mk, c.id, "other", ev.target.value)} />
+                    </label>
+                  </div>
+                  <div className="budget-card-foot">
+                    합계 {fmt(calc.sum)} · 잔여 <b className={calc.remain < 0 ? "over" : ""}>{fmt(calc.remain)}</b>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="hint" style={{ marginTop: 2 }}>
+              {monthLabel(mk)} 전체 잔여 합계: <b className={remainSum < 0 ? "over" : ""}>{fmt(remainSum)}</b>
+            </div>
+          </section>
+        );
+      })}
+    </main>
+  );
+}
+
+
 /* ── 스타일 ───────────────────────────────────────────── */
 function Style() {
   return (
@@ -1231,7 +1663,11 @@ function Style() {
 h1 { font-size:22px; font-weight:900; margin:0; letter-spacing:-0.5px; }
 .save-dot { font-size:11px; color:var(--sub); }
 .save-dot.error { color:var(--hot); font-weight:700; }
-.month-nav { display:flex; align-items:center; gap:12px; margin:14px 0 4px; }
+.month-nav { display:flex; align-items:center; gap:12px; margin:14px 0 4px; flex-wrap:wrap; }
+.month-bday-tag { border:1.5px solid var(--gold); background:#FFF7DE; color:#B07E00;
+  border-radius:999px; padding:6px 14px; font-size:13px; font-weight:800; cursor:pointer;
+  font-family:inherit; white-space:nowrap; }
+.month-bday-tag:hover { background:var(--gold); }
 .mbtn { width:36px; height:36px; border-radius:10px; border:1px solid var(--line);
   background:var(--card); font-size:18px; cursor:pointer; }
 .mbtn:hover { background:var(--bg); }
@@ -1239,6 +1675,48 @@ h1 { font-size:22px; font-weight:900; margin:0; letter-spacing:-0.5px; }
 .bday-banner { margin:10px 0 2px; background:#FFF7DE; border:1.5px solid var(--gold);
   border-radius:12px; padding:12px 16px; font-size:17px; font-weight:700; letter-spacing:-0.2px; }
 .bday-banner b { color:#B07E00; font-weight:900; margin-right:4px; }
+.bday-banner.today-highlight { background:var(--gold); border-color:#B07E00;
+  animation:bday-pulse 1.6s ease-in-out infinite; }
+.bday-banner.today-highlight b { color:#7A5400; }
+@keyframes bday-pulse {
+  0%, 100% { box-shadow:0 0 0 0 rgba(176,126,0,.35); }
+  50% { box-shadow:0 0 0 8px rgba(176,126,0,0); }
+}
+.bday-image-box { margin:10px 0 2px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.bday-image { max-width:220px; max-height:160px; border-radius:12px; border:1.5px solid var(--line);
+  object-fit:cover; }
+.bday-image-big { display:block; width:100%; max-height:220px; border-radius:16px;
+  border:1.5px solid var(--line); object-fit:cover; margin-top:6px; }
+
+.hbd-layout { display:grid; grid-template-columns:minmax(260px, 360px) 1fr; gap:16px; align-items:start; }
+.hbd-side { display:flex; flex-direction:column; gap:16px; min-width:0; }
+.hbd-cal-card { min-width:0; }
+@media (max-width:760px) {
+  .hbd-layout { grid-template-columns:1fr; }
+}
+
+.cal-grid { display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; margin-top:8px; }
+.cal-dow { text-align:center; font-size:11px; font-weight:700; color:var(--sub); padding:2px 0; }
+.cal-cell { position:relative; border:1.5px solid var(--line); border-radius:8px;
+  background:var(--card); cursor:default; font-family:inherit; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:1px; padding:4px 2px; min-height:32px; }
+.cal-cell.empty { border:none; background:transparent; min-height:32px; }
+.cal-date { font-size:11px; font-weight:600; color:var(--ink); }
+.cal-cell.has-bday { cursor:pointer; border-color:var(--gold); background:#FFF7DE; padding:4px 2px 5px; }
+.cal-cell.has-bday:hover { box-shadow:0 3px 8px rgba(0,0,0,.08); }
+.cal-cell.is-today { border-color:var(--act); border-width:2px; }
+.cal-cell.selected { background:var(--gold); }
+.cal-cell.has-coffee { border-color:var(--act); }
+.cal-cell.has-coffee.has-bday { background:linear-gradient(180deg, #FFF7DE 60%, #EAF3FF 60%); }
+.cal-cell.has-coffee:not(.has-bday) { background:#EAF3FF; cursor:pointer; }
+.cal-coffee { font-size:8px; font-weight:900; color:var(--act); line-height:1.15; white-space:nowrap; }
+.cal-names { display:flex; flex-direction:column; align-items:center; gap:0; margin-top:1px; }
+.cal-name { font-size:8.5px; font-weight:900; color:#B07E00; line-height:1.15; white-space:nowrap; }
+
+.today-popup { max-width:420px; text-align:center; }
+.today-popup-names { font-size:18px; font-weight:900; color:#B07E00; margin:6px 0 14px; }
+.today-popup-image { width:100%; max-height:320px; object-fit:cover; border-radius:16px;
+  border:1.5px solid var(--line); }
 .chip.bday { border-color:var(--gold); background:#FFF7DE; font-weight:700; }
 .chip.bday.on { background:var(--gold); color:var(--ink); border-color:var(--gold); }
 .tabs { display:flex; gap:4px; margin-top:14px; overflow-x:auto; }
@@ -1329,6 +1807,19 @@ h1 { font-size:22px; font-weight:900; margin:0; letter-spacing:-0.5px; }
 .t-amt { font-weight:700; width:110px; text-align:right; white-space:nowrap; }
 .t-who { color:var(--sub); font-size:13px; }
 .total-row td { border-bottom:none; border-top:2px solid var(--ink); font-weight:900; }
+.over { color:var(--hot) !important; }
+.budget-card { border:1.5px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+.budget-card:last-of-type { margin-bottom:6px; }
+.budget-card-head { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.budget-card-name { font-weight:900; font-size:15px; }
+.budget-card-avail { font-size:13px; font-weight:700; color:var(--sub); }
+.budget-card-inputs { display:grid; grid-template-columns:repeat(auto-fill, minmax(110px, 1fr)); gap:10px; }
+.budget-field { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.budget-field-label { font-size:11px; font-weight:700; color:var(--sub); display:flex; align-items:center; gap:6px; }
+.budget-field input { border:1.5px solid var(--line); border-radius:8px; padding:7px 9px;
+  font-size:13px; font-family:inherit; width:100%; box-sizing:border-box; }
+.budget-card-foot { margin-top:10px; font-size:13.5px; font-weight:700; color:var(--ink); }
+.budget-card-foot b { font-weight:900; }
 .edit-row input { border:1.5px solid var(--line); border-radius:8px; padding:6px 10px;
   font-size:14px; font-family:inherit; width:120px; }
 .edit-row input.mini { width:52px; }
