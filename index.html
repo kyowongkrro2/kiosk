@@ -187,25 +187,14 @@ const CAFE_BANAPRESSO = {
 
 const CAFE_BROWNBENCH = {
   id: "c3", name: "브라운벤치",
+  notice: "모닝세트(머핀or프레즐or베이글)로 제공되서 음료 메뉴가 한정적인 점 양해 부탁드립니다:)",
   options: [
     { name: "샷추가", delta: 500 }, { name: "시럽추가", delta: 500 },
-    { name: "세트 음료 라떼/카푸치노 변경", delta: 1000 },
     { name: "연하게", delta: 0 }, { name: "얼음 적게", delta: 0 },
   ],
   menus: [
-    M("커피", "에스프레소", 2800, "hot"),
-    M("커피", "에스프레소 도피오", 3300, "hot"),
     M("커피", "아메리카노", 2800, "both"),
-    M("커피", "아메리카노 (大)", 3300, "both"),
-    M("커피", "카푸치노", 3300, "both"),
     M("커피", "카페라떼", 3300, "both"),
-    M("커피", "카페라떼 (大)", 3800, "both"),
-    M("커피", "바닐라라떼", 4300, "both"),
-    M("커피", "헤이즐넛라떼", 4300, "both"),
-    M("커피", "토피넛라떼", 4300, "both"),
-    M("커피", "카페모카", 4600, "both"),
-    M("커피", "얼그레이라떼", 4800, "both"),
-    M("커피", "카라멜마끼아또", 4800, "both"),
     M("허브티", "잉글리쉬 블랙퍼스트", 3500, "both"),
     M("허브티", "얼그레이", 3500, "both"),
     M("허브티", "페퍼민트", 3500, "both"),
@@ -344,6 +333,19 @@ async function loadData() {
         const bb = d.cafes.find((c) => c.name === "브라운벤치");
         if (bb) bb.menus = bb.menus.filter((m) => m.cat !== "모닝세트 (AM7~10)" && m.cat !== "에이드");
         d.settings.brownBenchMenuFix1 = true;
+      }
+      if (!d.settings.brownBenchMenuFix2) {
+        const bb = d.cafes.find((c) => c.name === "브라운벤치");
+        if (bb) {
+          bb.menus = CAFE_BROWNBENCH.menus.map((m) => ({ ...m }));
+          bb.notice = CAFE_BROWNBENCH.notice;
+        }
+        d.settings.brownBenchMenuFix2 = true;
+      }
+      if (!d.settings.brownBenchOptFix1) {
+        const bb = d.cafes.find((c) => c.name === "브라운벤치");
+        if (bb) bb.options = bb.options.filter((o) => o.name !== "세트 음료 라떼/카푸치노 변경");
+        d.settings.brownBenchOptFix1 = true;
       }
       return d;
     }
@@ -507,9 +509,9 @@ function BirthdayCoffeeKiosk() {
               const cname = data.cafes.find((c) => c.id === r.cafeId)?.name;
               return (
                 <button key={r.id}
-                  className={"chip small round-chip" + (i === safeIdx ? " on" : "")}
+                  className={"chip small round-chip" + (i === safeIdx ? " on" : "") + (r.open === false ? " closed-chip" : "")}
                   onClick={() => setRoundIdx(i)}>
-                  {i + 1}차{cname ? ` · ${cname}` : ""}{r.date ? ` · ${fmtDateShort(r.date)}` : ""}
+                  {r.open === false && "🔒 "}{i + 1}차{cname ? ` · ${cname}` : ""}{r.date ? ` · ${fmtDateShort(r.date)}` : ""}
                 </button>
               );
             })}
@@ -862,6 +864,7 @@ function OrderView({ data, month, round, roundIdx, updateRound }) {
     updateRound((r) => { r.orders = r.orders.filter((o) => o.memberId !== who); });
 
   const cats = cafe ? [...new Set(cafe.menus.map((m) => m.cat))] : [];
+  const isOpen = round.open !== false;
 
   return (
     <main className="pane">
@@ -873,9 +876,16 @@ function OrderView({ data, month, round, roundIdx, updateRound }) {
           ) : (
             <span className="hint">아직 지정되지 않았습니다. 카페 관리 탭에서 카페를 지정하세요.</span>
           )}
+          {!isOpen && <span className="round-closed-tag">🔒 마감</span>}
         </div>
+        {cafe?.notice && <div className="cafe-notice">📌 {cafe.notice}</div>}
       </section>
 
+      {!isOpen && (
+        <div className="hint pad">🔒 이 차수는 관리자가 마감했어요. 주문을 받지 않습니다.</div>
+      )}
+
+      {isOpen && (
       <section className="step">
         <div className="step-label">이름을 선택하세요</div>
         <div className="chip-row">
@@ -893,8 +903,9 @@ function OrderView({ data, month, round, roundIdx, updateRound }) {
           })}
         </div>
       </section>
+      )}
 
-      {who && iAmAbsent && (
+      {isOpen && who && iAmAbsent && (
         <section className="step">
           <div className="step-label" style={{ marginBottom: 0 }}>
             {data.members.find((m) => m.id === who)?.name} 님은 이번 차수 불참으로 표시되어 있습니다.
@@ -903,7 +914,7 @@ function OrderView({ data, month, round, roundIdx, updateRound }) {
         </section>
       )}
 
-      {who && !iAmAbsent && cafe && (
+      {isOpen && who && !iAmAbsent && cafe && (
         <section className="step">
           <div className="step-label">
             {data.members.find((m) => m.id === who)?.name} 님, 메뉴를 선택하세요
@@ -941,9 +952,9 @@ function OrderView({ data, month, round, roundIdx, updateRound }) {
           ))}
         </section>
       )}
-      {who && !iAmAbsent && !cafe && <div className="hint pad">카페 관리 탭에서 이 차수의 카페를 지정하면 메뉴가 표시됩니다.</div>}
+      {isOpen && who && !iAmAbsent && !cafe && <div className="hint pad">카페 관리 탭에서 이 차수의 카페를 지정하면 메뉴가 표시됩니다.</div>}
 
-      {who && !iAmAbsent && picked && (
+      {isOpen && who && !iAmAbsent && picked && (
         <section className="step confirm">
           {picked.temp === "both" && (
             <>
@@ -1135,6 +1146,7 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
     setPendingCafe(null);
   };
   const setRoundDate = (dateStr) => updateRound((r) => { r.date = dateStr || null; });
+  const setRoundOpen = (open) => updateRound((r) => { r.open = open; });
 
   const getForm = (id) => forms[id] || { cat: "", name: "", price: "", temp: "both", editIndex: null };
   const setForm = (id, f) => setForms({ ...forms, [id]: f });
@@ -1201,11 +1213,12 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
         <div className="chip-row">
           {rounds.map((r, i) => {
             const cname = data.cafes.find((c) => c.id === r.cafeId)?.name;
+            const closed = r.open === false;
             return (
               <button key={r.id}
-                className={"chip round-chip" + (i === roundIdx ? " on" : "")}
+                className={"chip round-chip" + (i === roundIdx ? " on" : "") + (closed ? " closed-chip" : "")}
                 onClick={() => { setRoundIdx(i); setConfirmRound(null); }}>
-                {i + 1}차{cname ? ` · ${cname}` : ""}{r.date ? ` · ${fmtDateShort(r.date)}` : ""} ({r.orders.length}잔)
+                {closed && "🔒 "}{i + 1}차{cname ? ` · ${cname}` : ""}{r.date ? ` · ${fmtDateShort(r.date)}` : ""} ({r.orders.length}잔)
               </button>
             );
           })}
@@ -1224,6 +1237,15 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
           )}
         </div>
         <div className="inline-form" style={{ marginTop: 10 }}>
+          <span className="hint">{roundIdx + 1}차 주문 상태: </span>
+          <button className={"chip small" + (round.open !== false ? " on" : "")} onClick={() => setRoundOpen(true)}>
+            🟢 오픈 (주문 가능)
+          </button>
+          <button className={"chip small" + (round.open === false ? " on closed-chip" : "")} onClick={() => setRoundOpen(false)}>
+            🔒 마감 (주문 불가)
+          </button>
+        </div>
+        <div className="inline-form" style={{ marginTop: 10 }}>
           <span className="hint">{roundIdx + 1}차 커피 마시는 날: </span>
           <input type="date" value={round.date || ""} onChange={(e) => setRoundDate(e.target.value)} />
           {round.date && (
@@ -1231,7 +1253,7 @@ function CafeView({ data, month, rounds, roundIdx, setRoundIdx, addRound, remove
           )}
         </div>
         <div className="hint" style={{ marginTop: 8 }}>
-          한 달에 커피를 여러 번 마시면 차수를 추가하세요. 아래에서 선택한 차수의 카페를 지정합니다. 날짜를 지정하면 HBD 달력과 주문하기 화면에 표시돼요.
+          한 달에 커피를 여러 번 마시면 차수를 추가하세요. 아래에서 선택한 차수의 카페를 지정합니다. 날짜를 지정하면 HBD 달력과 주문하기 화면에 표시돼요. 마감하면 팀원들은 해당 차수에 주문할 수 없어요.
         </div>
       </section>
 
@@ -1752,9 +1774,15 @@ h1 { font-size:22px; font-weight:900; margin:0; letter-spacing:-0.5px; }
 .cafe-chip.on { background:var(--gold); color:var(--ink); border-color:var(--gold); }
 .step.slim { padding:14px 20px; }
 .cur-cafe { font-size:15px; font-weight:900; color:var(--ink); letter-spacing:-0.2px; }
+.cafe-notice { margin-top:8px; background:#FFF7DE; border:1.5px solid var(--gold); border-radius:10px;
+  padding:9px 12px; font-size:13px; font-weight:700; color:#8A6400; line-height:1.4; }
 .round-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:12px 0 2px; }
 .round-title { font-size:12px; font-weight:700; color:var(--sub); }
 .round-chip.on { background:var(--act); }
+.closed-chip { opacity:0.65; border-color:var(--hot) !important; color:var(--hot); }
+.closed-chip.on { background:var(--hot) !important; color:#fff; opacity:1; }
+.round-closed-tag { font-size:12px; font-weight:800; color:var(--hot); background:#FDEAEA;
+  border:1.5px solid var(--hot); border-radius:999px; padding:3px 10px; margin-left:8px; }
 .cafe-cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; }
 .cafe-card { border:2.5px solid var(--line); border-radius:18px; background:var(--card);
   padding:26px 18px; min-height:110px; cursor:pointer; font-family:inherit;
